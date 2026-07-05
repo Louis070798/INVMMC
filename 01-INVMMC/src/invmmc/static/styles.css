@@ -48,6 +48,12 @@
   --text-muted: #9ca3af;
   --line: #374151;
 
+  /* Nen mo cho badge trang thai tren nen toi */
+  --green-soft: rgba(16, 185, 129, 0.16);
+  --yellow-soft: rgba(245, 158, 11, 0.16);
+  --orange-soft: rgba(249, 115, 22, 0.16);
+  --red-soft: rgba(239, 68, 68, 0.16);
+
   --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
 }
 
@@ -90,7 +96,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--line);
   border-radius: 9999px;
 }
 
@@ -511,7 +517,7 @@ body:not([data-tab="dashboard"]) .main-layout-grid {
 }
 
 .btn-secondary-action {
-  background: #ffffff;
+  background: var(--surface);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: var(--radius-inner);
@@ -530,7 +536,7 @@ body:not([data-tab="dashboard"]) .main-layout-grid {
 }
 
 .approval-level-warning {
-  background: #f8fafc;
+  background: var(--surface-2);
   border: 1px solid var(--line);
   padding: 10px 14px;
   border-radius: var(--radius-inner);
@@ -880,7 +886,7 @@ body[data-tab="reports"] .export-panel {
   height: 140px;
   width: 100%;
   justify-content: center;
-  background: #f8fafc;
+  background: var(--surface-2);
   border-radius: var(--radius-inner);
   padding: 4px;
 }
@@ -1374,7 +1380,7 @@ td.amount {
 
 /* RECONCILING FOOTER */
 .summary-footer {
-  background: var(--surf-nav-bg, #ffffff);
+  background: var(--nav-bg);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 16px;
@@ -1621,9 +1627,9 @@ dialog::backdrop {
 
 .panel-header-actions button,
 .row-actions button {
-  border: 1px solid var(--border, #d5dbe3);
-  background: var(--panel, #fff);
-  color: inherit;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
   border-radius: 6px;
   padding: 4px 10px;
   cursor: pointer;
@@ -1632,8 +1638,8 @@ dialog::backdrop {
 
 .panel-header-actions button:hover,
 .row-actions button:hover {
-  border-color: var(--primary, #2563eb);
-  color: var(--primary, #2563eb);
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .row-actions {
@@ -1641,8 +1647,8 @@ dialog::backdrop {
 }
 
 .row-actions button.danger:hover {
-  border-color: var(--red, #dc2626);
-  color: var(--red, #dc2626);
+  border-color: var(--red);
+  color: var(--red);
 }
 
 .pill {
@@ -1651,17 +1657,18 @@ dialog::backdrop {
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
-  background: var(--border, #e5e7eb);
+  background: var(--surface-2);
+  color: var(--text-muted);
 }
 
 .pill-thu {
-  background: rgba(22, 163, 74, 0.15);
-  color: #15803d;
+  background: var(--green-soft);
+  color: var(--green);
 }
 
 .pill-chi {
-  background: rgba(220, 38, 38, 0.12);
-  color: #b91c1c;
+  background: var(--red-soft);
+  color: var(--red);
 }
 
 #customRange {
@@ -1685,18 +1692,18 @@ dialog::backdrop {
   max-width: 620px;
 }
 
-#attachmentForm .form-grid {
+.dialog-form .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px 16px;
   margin-top: 4px;
 }
 
-#attachmentForm .form-grid .full {
+.dialog-form .form-grid .full {
   grid-column: 1 / -1;
 }
 
-#attachmentForm label {
+.dialog-form label {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1705,8 +1712,8 @@ dialog::backdrop {
   color: var(--text-muted);
 }
 
-#attachmentForm input,
-#attachmentForm select {
+.dialog-form input,
+.dialog-form select {
   height: 38px;
   border: 1px solid var(--line);
   border-radius: var(--radius-inner);
@@ -1718,23 +1725,23 @@ dialog::backdrop {
   font-weight: 400;
 }
 
-#attachmentForm input[type="file"] {
+.dialog-form input[type="file"] {
   padding: 7px 10px;
   height: auto;
 }
 
-#attachmentForm input:focus,
-#attachmentForm select:focus {
+.dialog-form input:focus,
+.dialog-form select:focus {
   border-color: var(--primary);
 }
 
-#attachmentForm .form-actions {
+.dialog-form .form-actions {
   display: flex;
   gap: 10px;
   margin-top: 16px;
 }
 
-#attachmentForm .form-actions button {
+.dialog-form .form-actions button {
   flex: 1;
   height: 42px;
   border: 0;
@@ -1744,21 +1751,22 @@ dialog::backdrop {
   cursor: pointer;
 }
 
-#attachmentForm .form-actions button.secondary {
-  background: var(--line, #e2e8f0);
+.dialog-form .form-actions button.secondary {
+  background: var(--surface-2);
   color: var(--text);
+  border: 1px solid var(--line);
 }
 
-#attachmentForm .form-actions button.secondary:hover {
-  background: #d3dce6;
+.dialog-form .form-actions button.secondary:hover {
+  background: var(--line);
 }
 
-#attachmentForm .form-actions button.confirm {
+.dialog-form .form-actions button.confirm {
   background: #16a34a;
   color: #fff;
 }
 
-#attachmentForm .form-actions button.confirm:hover {
+.dialog-form .form-actions button.confirm:hover {
   background: #15803d;
 }
 
@@ -1774,7 +1782,100 @@ dialog::backdrop {
 }
 
 @media (max-width: 640px) {
-  #attachmentForm .form-grid {
+  .dialog-form .form-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---- My Telegram bot card (Settings) ---- */
+.my-bot-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inner);
+  padding: 16px;
+  margin-bottom: 16px;
+  background: var(--surface-2);
+}
+
+.my-bot-card h3 {
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.my-bot-status {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.my-bot-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.my-bot-form input {
+  flex: 1;
+  min-width: 260px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inner);
+  padding: 0 10px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  font-size: 13px;
+}
+
+.my-bot-form input:focus {
+  border-color: var(--primary);
+}
+
+.my-bot-form .export-button {
+  height: 38px;
+  padding: 0 16px;
+}
+
+.my-bot-form .bot-remove {
+  height: 38px;
+  padding: 0 14px;
+  background: transparent;
+  border: 1px solid var(--red);
+  color: var(--red);
+  border-radius: var(--radius-inner);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.my-bot-card small {
+  color: var(--text-muted);
+  line-height: 1.5;
+  display: block;
+}
+
+/* ---- Admin role checkboxes ---- */
+.role-checks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inner);
+  padding: 10px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.role-checks label {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500 !important;
+  color: var(--text) !important;
+}
+
+.role-checks input[type="checkbox"] {
+  height: auto;
+  accent-color: var(--primary);
 }

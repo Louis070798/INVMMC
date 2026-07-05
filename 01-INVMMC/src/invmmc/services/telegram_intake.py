@@ -1,4 +1,5 @@
 import hashlib
+from datetime import UTC
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -38,16 +39,22 @@ class TelegramAttachmentService:
         self.bot_client = bot_client or TelegramBotClient()
         self.intake = intake or ExpenseIntakeService()
 
-    async def store_from_update(self, db: Session, update: dict) -> TransferAttachmentModel | None:
+    async def store_from_update(
+        self,
+        db: Session,
+        update: dict,
+        owner_user_id: str | None = None,
+    ) -> TransferAttachmentModel | None:
         candidate = extract_attachment_candidate(update)
         if not candidate:
             return None
-        return await self.store_candidate(db, candidate)
+        return await self.store_candidate(db, candidate, owner_user_id=owner_user_id)
 
     async def store_candidate(
         self,
         db: Session,
         candidate: TelegramAttachmentCandidate,
+        owner_user_id: str | None = None,
     ) -> TransferAttachmentModel:
         parsed = self.intake.parse_text(candidate.caption)
         # So qua nho trong caption (vd "lan 1", "so 5") khong phai so tien VND;
@@ -81,6 +88,7 @@ class TelegramAttachmentService:
         attachment = TransferAttachmentModel(
             id=f"att-{uuid4().hex[:12]}",
             project_id=project.id if project else None,
+            owner_user_id=owner_user_id,
             source="telegram",
             telegram_file_id=candidate.file_id,
             telegram_chat_id=candidate.chat_id,
@@ -124,7 +132,11 @@ class TelegramAttachmentService:
         if not state or state.awaiting != "note" or not state.attachment_id:
             return None
 
-        expired = (utc_now() - state.updated_at).total_seconds() > NOTE_STATE_TTL_SECONDS
+        # SQLite tra ve datetime khong co timezone; coi nhu UTC de so sanh.
+        updated_at = state.updated_at
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=UTC)
+        expired = (utc_now() - updated_at).total_seconds() > NOTE_STATE_TTL_SECONDS
         attachment = db.get(TransferAttachmentModel, state.attachment_id)
         state.awaiting = ""
         state.attachment_id = None
@@ -252,6 +264,8 @@ class TelegramAttachmentService:
 
             # Sau khi AI doc duoc ma GD/so tien/thoi gian: kiem tra trung nghiep vu
             # (cung giao dich nhung anh chup khac nhau, hash khong bat duoc).
+            notify_client = client_for_owner(db, attachment.owner_user_id)
+
             business_original = find_business_duplicate(db, attachment)
             if business_original:
                 attachment.review_status = "duplicate"
@@ -260,7 +274,7 @@ class TelegramAttachmentService:
                 if attachment.telegram_chat_id:
                     from invmmc.integrations.telegram import duplicate_keyboard
 
-                    await self.bot_client.send_message(
+                    await notify_client.send_message(
                         int(attachment.telegram_chat_id),
                         build_duplicate_warning(
                             attachment,
@@ -276,7 +290,7 @@ class TelegramAttachmentService:
             db.refresh(attachment)
 
             if attachment.telegram_chat_id:
-                await self.bot_client.send_message(
+                await notify_client.send_message(
                     int(attachment.telegram_chat_id),
                     build_analysis_message(attachment),
                     attachment_keyboard(attachment.id),
@@ -292,6 +306,17 @@ class TelegramAttachmentService:
             if parsed.project_code and parsed.project_code in code_to_id:
                 return parsed.project_code
         return None
+
+
+def client_for_owner(db: Session, owner_user_id: str | None) -> TelegramBotClient:
+    """Tra ve bot client cua chu so huu chung tu; khong co thi dung token .env."""
+    if owner_user_id:
+        from invmmc.services.telegram_bots import get_user_bot
+
+        bot = get_user_bot(db, owner_user_id)
+        if bot and bot.token:
+            return TelegramBotClient(bot.token)
+    return TelegramBotClient()
 
 
 def set_awaiting_note(db: Session, chat_id: str, attachment_id: str) -> None:

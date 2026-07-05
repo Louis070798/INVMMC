@@ -1,12 +1,13 @@
 from fastapi.testclient import TestClient
 
+from invmmc.core.config import settings
 from invmmc.main import app
 
 
 def login_admin(client: TestClient) -> None:
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "admin@invmmc.local", "password": "Admin@123456"},
+        json={"email": settings.admin_email, "password": settings.admin_password},
     )
     assert response.status_code == 200
 

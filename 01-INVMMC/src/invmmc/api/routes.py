@@ -24,10 +24,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from invmmc.api.schemas import (
+    AdminUserCreateRequest,
+    AdminUserUpdateRequest,
     ApprovalPreviewRequest,
     ApprovalPreviewResponse,
     AttachmentUpdateRequest,
     AuthUserResponse,
+    TelegramBotTokenRequest,
     ExpenseCreateRequest,
     ExpenseCreateResponse,
     HealthResponse,
@@ -47,8 +50,8 @@ from invmmc.integrations.momo import MomoAdapter
 from invmmc.integrations.telegram import (
     TelegramBotClient,
     TelegramUpdateHandler,
-    attachment_keyboard,
     duplicate_keyboard,
+    intake_note_keyboard,
 )
 from invmmc.core.imaging import dhash_hex
 from invmmc.persistence.models import (
@@ -56,6 +59,7 @@ from invmmc.persistence.models import (
     IntegrationConfigModel,
     ProjectModel,
     TransferAttachmentModel,
+    UserModel,
 )
 from invmmc.services.auth import (
     CONFIG_ROLES,
@@ -66,9 +70,20 @@ from invmmc.services.auth import (
     authenticate_user,
     create_session,
     get_current_user,
+    hash_password,
     optional_current_user,
     require_roles,
     revoke_session,
+    roles_to_json,
+)
+from invmmc.services.telegram_bots import (
+    BotTokenError,
+    bot_summary,
+    delete_user_bot,
+    get_bot_by_row_id,
+    get_user_bot,
+    set_user_bot,
+    verify_bot_token,
 )
 from invmmc.services.integration_health import enrich_integration_status
 from invmmc.services.report_export import (
@@ -154,6 +169,132 @@ async def me(user: AuthUser = Depends(get_current_user)) -> AuthUserResponse:
         full_name=user.full_name,
         roles=sorted(role.value for role in user.roles),
     )
+
+
+# ---------------------------------------------------------------- bot ca nhan
+
+
+@router.get("/api/v1/me/telegram-bot")
+async def get_my_telegram_bot(
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    return bot_summary(get_user_bot(db, user.id))
+
+
+@router.put("/api/v1/me/telegram-bot")
+async def set_my_telegram_bot(
+    payload: TelegramBotTokenRequest,
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    token = payload.token.strip()
+    try:
+        bot_id, bot_username = await verify_bot_token(token)
+        bot = set_user_bot(db, user.id, token, bot_id, bot_username)
+    except BotTokenError as error:
+        status_code = 409 if str(error) == "token_in_use" else 400
+        raise HTTPException(status_code=status_code, detail=str(error)) from error
+    return bot_summary(bot)
+
+
+@router.delete("/api/v1/me/telegram-bot")
+async def delete_my_telegram_bot(
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, str]:
+    removed = delete_user_bot(db, user.id)
+    return {"status": "deleted" if removed else "not_configured"}
+
+
+# ---------------------------------------------------------------- admin users
+
+
+def _admin_user_dict(db: Session, row: UserModel) -> dict:
+    bot = get_user_bot(db, row.id)
+    return {
+        "id": row.id,
+        "email": row.email,
+        "full_name": row.full_name,
+        "roles": sorted(json.loads(row.roles_json or "[]")),
+        "status": row.status,
+        "created_at": row.created_at.isoformat(),
+        "bot": bot_summary(bot),
+    }
+
+
+def _parse_roles(raw_roles: list[str]) -> set[Role]:
+    roles: set[Role] = set()
+    for raw in raw_roles:
+        try:
+            roles.add(Role(raw.strip()))
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=f"invalid_role:{raw}") from error
+    return roles
+
+
+@router.get("/api/v1/admin/users")
+async def admin_list_users(
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(require_roles(Role.SYSTEM_ADMIN)),
+) -> list[dict]:
+    rows = db.scalars(select(UserModel).order_by(UserModel.created_at)).all()
+    return [_admin_user_dict(db, row) for row in rows]
+
+
+@router.post("/api/v1/admin/users")
+async def admin_create_user(
+    payload: AdminUserCreateRequest,
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(require_roles(Role.SYSTEM_ADMIN)),
+) -> dict:
+    email = payload.email.lower().strip()
+    if db.scalar(select(UserModel).where(UserModel.email == email)):
+        raise HTTPException(status_code=409, detail="email_exists")
+
+    roles = _parse_roles(payload.roles) or {Role.EMPLOYEE}
+    row = UserModel(
+        id=f"user-{uuid4().hex[:10]}",
+        email=email,
+        full_name=payload.full_name.strip(),
+        password_hash=hash_password(payload.password),
+        roles_json=roles_to_json(roles),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _admin_user_dict(db, row)
+
+
+@router.patch("/api/v1/admin/users/{user_id}")
+async def admin_update_user(
+    user_id: str,
+    payload: AdminUserUpdateRequest,
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(require_roles(Role.SYSTEM_ADMIN)),
+) -> dict:
+    row = db.get(UserModel, user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="user_not_found")
+
+    if payload.full_name is not None:
+        row.full_name = payload.full_name.strip()
+    if payload.roles is not None:
+        roles = _parse_roles(payload.roles) or {Role.EMPLOYEE}
+        # Khong cho admin tu bo quyen system_admin cua chinh minh.
+        if row.id == user.id and Role.SYSTEM_ADMIN not in roles:
+            raise HTTPException(status_code=400, detail="cannot_remove_own_admin_role")
+        row.roles_json = roles_to_json(roles)
+    if payload.status is not None:
+        if row.id == user.id and payload.status == "disabled":
+            raise HTTPException(status_code=400, detail="cannot_disable_self")
+        row.status = payload.status
+    if payload.password is not None:
+        row.password_hash = hash_password(payload.password)
+
+    db.commit()
+    db.refresh(row)
+    return _admin_user_dict(db, row)
 
 
 @router.post("/api/v1/approval/preview", response_model=ApprovalPreviewResponse)
@@ -257,17 +398,21 @@ async def create_expense(
     )
 
 
+def _can_modify_attachment(user: AuthUser, attachment: TransferAttachmentModel) -> bool:
+    """Finance/quan tri sua duoc tat ca; user thuong chi sua chung tu cua minh."""
+    return user.has_any_role(FINANCE_WRITE_ROLES) or attachment.owner_user_id == user.id
+
+
 @router.get("/api/v1/attachments")
 async def list_attachments(
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
-    user: AuthUser = Depends(require_roles(*FINANCE_READ_ROLES)),
+    user: AuthUser = Depends(get_current_user),
 ) -> list[dict]:
-    rows = db.scalars(
-        select(TransferAttachmentModel)
-        .order_by(TransferAttachmentModel.received_at.desc())
-        .limit(limit)
-    ).all()
+    query = select(TransferAttachmentModel).order_by(TransferAttachmentModel.received_at.desc())
+    if not user.has_any_role(FINANCE_READ_ROLES):
+        query = query.where(TransferAttachmentModel.owner_user_id == user.id)
+    rows = db.scalars(query.limit(limit)).all()
     return [attachment_dict(row) for row in rows]
 
 
@@ -285,7 +430,7 @@ async def create_attachment(
     force: bool = Form(default=False),
     file: UploadFile | None = File(default=None),
     db: Session = Depends(get_db),
-    user: AuthUser = Depends(require_roles(*FINANCE_WRITE_ROLES)),
+    user: AuthUser = Depends(get_current_user),
 ) -> dict:
     if transaction_type not in {"thu", "chi", "unknown"}:
         raise HTTPException(status_code=400, detail="invalid_transaction_type")
@@ -335,6 +480,7 @@ async def create_attachment(
     attachment = TransferAttachmentModel(
         id=f"att-{uuid4().hex[:12]}",
         project_id=project.id if project else None,
+        owner_user_id=user.id,
         source="dashboard",
         file_name=file_name,
         file_path=file_path,
@@ -362,11 +508,13 @@ async def update_attachment(
     attachment_id: str,
     payload: AttachmentUpdateRequest,
     db: Session = Depends(get_db),
-    user: AuthUser = Depends(require_roles(*FINANCE_WRITE_ROLES)),
+    user: AuthUser = Depends(get_current_user),
 ) -> dict:
     attachment = db.get(TransferAttachmentModel, attachment_id)
     if not attachment:
         raise HTTPException(status_code=404, detail="attachment_not_found")
+    if not _can_modify_attachment(user, attachment):
+        raise HTTPException(status_code=403, detail="not_your_attachment")
 
     if payload.project_code is not None:
         code = payload.project_code.strip().upper()
@@ -418,11 +566,13 @@ async def update_attachment(
 async def delete_attachment(
     attachment_id: str,
     db: Session = Depends(get_db),
-    user: AuthUser = Depends(require_roles(*FINANCE_WRITE_ROLES)),
+    user: AuthUser = Depends(get_current_user),
 ) -> dict[str, str]:
     attachment = db.get(TransferAttachmentModel, attachment_id)
     if not attachment:
         raise HTTPException(status_code=404, detail="attachment_not_found")
+    if not _can_modify_attachment(user, attachment):
+        raise HTTPException(status_code=403, detail="not_your_attachment")
     if attachment.file_path:
         Path(attachment.file_path).unlink(missing_ok=True)
     db.delete(attachment)
@@ -595,8 +745,14 @@ async def telegram_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
+    x_invmmc_bot_id: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
+    """Endpoint noi bo nhan update tu polling bridge (khong dang ky webhook Telegram).
+
+    Bridge poll getUpdates cua TUNG bot user va forward vao day kem
+    X-Invmmc-Bot-Id de biet update thuoc bot cua ai.
+    """
     if not verify_shared_secret(
         x_telegram_bot_api_secret_token,
         settings.telegram_webhook_secret,
@@ -604,8 +760,15 @@ async def telegram_webhook(
         raise HTTPException(status_code=401, detail="invalid telegram webhook secret")
 
     update = await request.json()
+
+    owner_user_id: str | None = None
     bot = TelegramBotClient()
-    intake_service = TelegramAttachmentService()
+    if x_invmmc_bot_id:
+        bot_row = get_bot_by_row_id(db, x_invmmc_bot_id)
+        if bot_row:
+            owner_user_id = bot_row.user_id
+            bot = TelegramBotClient(bot_row.token)
+    intake_service = TelegramAttachmentService(bot_client=bot)
 
     if "callback_query" in update:
         result = TelegramCommandService(db).handle_callback(update)
@@ -620,7 +783,7 @@ async def telegram_webhook(
             )
         return {"status": "ok", "attachment": "callback"}
 
-    attachment = await intake_service.store_from_update(db, update)
+    attachment = await intake_service.store_from_update(db, update, owner_user_id=owner_user_id)
 
     if attachment:
         if attachment.review_status == "duplicate":
@@ -629,14 +792,18 @@ async def telegram_webhook(
             keyboard = duplicate_keyboard(attachment.id)
         else:
             reply_text = build_intake_reply(attachment)
-            keyboard = attachment_keyboard(attachment.id)
+            keyboard = intake_note_keyboard(attachment.id)
             if attachment.review_status == "pending_ai":
                 background_tasks.add_task(intake_service.analyze_and_notify, attachment.id)
         if attachment.telegram_chat_id:
             await bot.send_message(int(attachment.telegram_chat_id), reply_text, keyboard)
         return {"status": "ok", "attachment": "stored"}
 
-    reply = TelegramCommandService(db).handle(update) or TelegramUpdateHandler().handle(update)
+    reply = (
+        intake_service.capture_pending_note(db, update)
+        or TelegramCommandService(db).handle(update)
+        or TelegramUpdateHandler().handle(update)
+    )
     if reply:
         await bot.send_message(reply.chat_id, reply.text, reply.reply_markup)
     return {"status": "ok", "attachment": "none"}

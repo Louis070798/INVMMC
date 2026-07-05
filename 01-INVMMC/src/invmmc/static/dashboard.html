@@ -30,6 +30,7 @@
           <a href="#transfers" data-tab="transfers"><span data-i18n="nav_transfers">Transfers</span> <span
               class="badge warning" id="navTransfers">0</span></a>
           <a href="#settings" data-tab="settings" data-i18n="nav_settings">Settings</a>
+          <a href="#admin" data-tab="admin" id="navAdmin" data-i18n="nav_admin" hidden>Admin</a>
         </nav>
       </div>
 
@@ -385,6 +386,24 @@
             <div class="panel-header">
               <h2 data-i18n="panel_settings_title">Settings</h2>
             </div>
+
+            <!-- Bot Telegram ca nhan: moi user nhap token bot rieng, he thong poll getUpdates -->
+            <div class="my-bot-card">
+              <h3>Bot Telegram của tôi</h3>
+              <p id="myBotStatus" class="my-bot-status">Đang tải...</p>
+              <div class="my-bot-form">
+                <input id="myBotToken" type="password" autocomplete="off"
+                  placeholder="Dán token bot từ @BotFather (vd 123456789:AA...)" />
+                <button id="saveMyBot" type="button" class="export-button">Lưu bot</button>
+                <button id="removeMyBot" type="button" class="bot-remove" hidden>Gỡ bot</button>
+              </div>
+              <small>
+                Tạo bot qua @BotFather trên Telegram rồi dán token vào đây. Hệ thống chỉ dùng
+                long polling (getUpdates) — không cần webhook, không cần mở cổng. Chứng từ gửi
+                vào bot của bạn sẽ thuộc về tài khoản của bạn.
+              </small>
+            </div>
+
             <div class="settings-grid">
               <article>
                 <strong>Database</strong>
@@ -398,6 +417,30 @@
                 <strong>Security</strong>
                 <span>Token thật nên lưu trong `.env`, không commit lên git.</span>
               </article>
+            </div>
+          </section>
+          <!-- ADMIN: USER MANAGEMENT -->
+          <section class="panel table-panel" id="admin" data-views="admin" hidden>
+            <div class="panel-header">
+              <h2>Quản lý người dùng &amp; phân quyền</h2>
+              <div class="panel-header-actions">
+                <button id="newUserBtn" type="button">+ Người dùng</button>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Họ tên</th>
+                    <th>Vai trò</th>
+                    <th>Bot Telegram</th>
+                    <th>Trạng thái</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="userRows"></tbody>
+              </table>
             </div>
           </section>
         </section>
@@ -489,9 +532,49 @@
     </form>
   </dialog>
 
+  <!-- Dialog for Admin User Create & Edit -->
+  <dialog id="userDialog">
+    <form id="userForm" class="dialog-form" method="dialog">
+      <div class="dialog-header">
+        <h2 id="userDialogTitle">Người dùng</h2>
+        <button type="button" id="closeUserDialog" title="Close">×</button>
+      </div>
+      <input type="hidden" name="id" />
+      <div class="form-grid">
+        <label class="full">
+          Email
+          <input name="email" type="email" required placeholder="nhanvien@congty.vn" />
+        </label>
+        <label>
+          Họ tên
+          <input name="full_name" required placeholder="Nguyễn Văn A" />
+        </label>
+        <label>
+          Mật khẩu
+          <input name="password" type="password" autocomplete="new-password"
+            placeholder="Tối thiểu 8 ký tự" />
+        </label>
+        <label class="full">
+          Vai trò
+          <div class="role-checks" id="roleChecks"></div>
+        </label>
+        <label id="userStatusLabel" hidden>
+          Trạng thái
+          <select name="status">
+            <option value="active">Hoạt động</option>
+            <option value="disabled">Khóa</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="confirm" id="userSubmitBtn">Lưu người dùng</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Dialog for Document / Attachment Create & Edit -->
   <dialog id="attachmentDialog">
-    <form id="attachmentForm" method="dialog">
+    <form id="attachmentForm" class="dialog-form" method="dialog">
       <div class="dialog-header">
         <h2 id="attachmentDialogTitle">Chứng từ</h2>
         <button type="button" id="closeAttachmentDialog" title="Close">×</button>

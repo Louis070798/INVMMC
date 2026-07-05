@@ -21,6 +21,7 @@ Muc tieu cua du an:
 - [Telegram chatbot va BotFather token](./docs/06-telegram-chatbot-token-data-flow.md)
 - [Backend contract cho Antigravity](./docs/07-antigravity-backend-contract.md)
 - [AI local phan tich anh chuyen khoan thu/chi](./docs/08-ai-phan-tich-thu-chi.md)
+- [Da nguoi dung: moi user mot bot Telegram](./docs/09-multi-user-bot.md)
 
 ## Cau truc ung dung
 

@@ -61,6 +61,9 @@ class TransferAttachmentModel(Base):
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
     source: Mapped[str] = mapped_column(String(40), default="telegram")
     telegram_file_id: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
     telegram_chat_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -85,6 +88,29 @@ class TransferAttachmentModel(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
 
     project: Mapped[ProjectModel | None] = relationship(back_populates="attachments")
+
+
+class TelegramBotModel(Base):
+    """Bot Telegram rieng cua tung nguoi dung (moi user toi da 1 bot).
+
+    Token do user tu nhap o trang Settings; he thong verify qua getMe.
+    Local luu plaintext trong SQLite; production nen ma hoa hoac dung secret manager.
+    """
+
+    __tablename__ = "telegram_bots"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    token: Mapped[str] = mapped_column(String(120), unique=True)
+    bot_id: Mapped[str] = mapped_column(String(40), default="", index=True)
+    bot_username: Mapped[str] = mapped_column(String(120), default="")
+    status: Mapped[str] = mapped_column(String(30), default="active")  # active | invalid
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    user: Mapped["UserModel"] = relationship(back_populates="telegram_bot")
 
 
 class ChatStateModel(Base):
@@ -116,6 +142,7 @@ class UserModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     sessions: Mapped[list["UserSessionModel"]] = relationship(back_populates="user")
+    telegram_bot: Mapped["TelegramBotModel | None"] = relationship(back_populates="user")
 
 
 class UserSessionModel(Base):

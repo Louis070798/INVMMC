@@ -22,10 +22,44 @@ def init_db() -> None:
     backfill_attachment_hashes()
 
 
+def migrate_env_bot_to_admin(db: Session) -> None:
+    """Chuyen TELEGRAM_BOT_TOKEN trong .env thanh bot ca nhan cua admin (chay 1 lan).
+
+    He thong da bot: moi user so huu 1 bot, luu trong bang telegram_bots.
+    Token cu trong .env duoc gan cho tai khoan admin de khong mat du lieu flow cu.
+    """
+    from uuid import uuid4
+
+    from invmmc.persistence.models import TelegramBotModel
+
+    token = settings.telegram_bot_token.strip()
+    if not token:
+        return
+    if db.scalar(select(TelegramBotModel).where(TelegramBotModel.token == token)):
+        return
+    admin = db.scalar(
+        select(UserModel).where(UserModel.email == settings.admin_email.lower().strip())
+    )
+    if not admin or db.scalar(
+        select(TelegramBotModel).where(TelegramBotModel.user_id == admin.id)
+    ):
+        return
+    db.add(
+        TelegramBotModel(
+            id=f"bot-{uuid4().hex[:10]}",
+            user_id=admin.id,
+            token=token,
+            status="active",
+        )
+    )
+    db.commit()
+
+
 # Cot bo sung sau khi bang da ton tai; create_all khong tu them cot moi.
 # Ap dung cho SQLite local; production PostgreSQL nen dung cong cu migration rieng.
 EXTRA_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "transfer_attachments": [
+        ("owner_user_id", "VARCHAR(40)"),
         ("transaction_type", "VARCHAR(10) DEFAULT 'unknown'"),
         ("review_status", "VARCHAR(30) DEFAULT 'pending_review'"),
         ("file_sha256", "VARCHAR(64)"),
@@ -106,6 +140,7 @@ def backfill_attachment_hashes() -> None:
 def seed_demo_data(db: Session) -> None:
     ensure_default_integrations(db)
     ensure_default_admin(db)
+    migrate_env_bot_to_admin(db)
 
     if not settings.demo_seed_data:
         return
@@ -234,9 +269,6 @@ def ensure_default_integrations(db: Session) -> None:
 
 def ensure_default_admin(db: Session) -> None:
     email = settings.admin_email.lower().strip()
-    if db.scalar(select(UserModel.id).where(UserModel.email == email)):
-        return
-
     roles: set[Role] = set()
     for raw_role in settings.admin_roles.split(","):
         raw_role = raw_role.strip()
@@ -248,6 +280,16 @@ def ensure_default_admin(db: Session) -> None:
             continue
     if not roles:
         roles = {Role.SYSTEM_ADMIN}
+
+    existing_admin = db.get(UserModel, "user-admin")
+    existing_email_owner = db.scalar(select(UserModel).where(UserModel.email == email))
+    if existing_admin:
+        if existing_admin.email != email and existing_email_owner is None:
+            existing_admin.email = email
+            db.commit()
+        return
+    if existing_email_owner:
+        return
 
     db.add(
         UserModel(

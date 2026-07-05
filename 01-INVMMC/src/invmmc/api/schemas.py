@@ -79,6 +79,24 @@ class AttachmentUpdateRequest(BaseModel):
     status: str | None = Field(default=None, pattern="^(unmatched|matched|rejected)$")
 
 
+class TelegramBotTokenRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=120)
+
+
+class AdminUserCreateRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=240)
+    full_name: str = Field(min_length=1, max_length=160)
+    password: str = Field(min_length=8, max_length=100)
+    roles: list[str] = Field(default_factory=list)
+
+
+class AdminUserUpdateRequest(BaseModel):
+    full_name: str | None = Field(default=None, max_length=160)
+    roles: list[str] | None = None
+    status: str | None = Field(default=None, pattern="^(active|disabled)$")
+    password: str | None = Field(default=None, min_length=8, max_length=100)
+
+
 class LoginRequest(BaseModel):
     email: str
     password: str

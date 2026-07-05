@@ -16,12 +16,17 @@ from invmmc.core.config import settings
 from invmmc.integrations.telegram import (
     TelegramReply,
     attachment_keyboard,
+    intake_note_keyboard,
     pending_list_keyboard,
     project_picker_keyboard,
     projects_list_keyboard,
 )
 from invmmc.persistence.models import ExpenseRequestModel, ProjectModel, TransferAttachmentModel
-from invmmc.services.telegram_intake import build_analysis_message
+from invmmc.services.telegram_intake import (
+    build_analysis_message,
+    clear_awaiting_note,
+    set_awaiting_note,
+)
 
 EDIT_COMMANDS = {"/edit", "/sua"}
 CONFIRM_COMMANDS = {"/confirm", "/xacnhan"}
@@ -140,6 +145,9 @@ class TelegramCommandService:
             return self._cb_duplicate_keep(chat_id, parts[1])
         if action == "dx" and len(parts) == 2:
             return self._cb_duplicate_discard(chat_id, parts[1])
+        if action == "ns" and len(parts) == 2:
+            clear_awaiting_note(self.db, str(chat_id))
+            return CallbackResult(ack="Da bo qua nhap noi dung.")
         return CallbackResult(ack="Thao tac khong hop le hoac da het han.")
 
     def _cb_set_type(self, chat_id: int, attachment_id: str, value: str) -> CallbackResult:
@@ -227,21 +235,23 @@ class TelegramCommandService:
         already_analyzed = bool((attachment.ai_payload_json or "{}") not in {"", "{}"})
         can_analyze = bool(settings.ai_enabled and attachment.file_path) and not already_analyzed
         attachment.review_status = "pending_ai" if can_analyze else "pending_review"
+        set_awaiting_note(self.db, str(chat_id), attachment.id)
         self.db.commit()
         self.db.refresh(attachment)
 
+        note_hint = ">>> NHAP NOI DUNG: go tin nhan tiep theo de luu dien giai (hoac bam Bo qua)."
         if already_analyzed:
-            text = f"Da giu lai {attachment.id}.\n" + build_analysis_message(attachment)
+            text = f"Da giu lai {attachment.id}.\n{note_hint}\n" + build_analysis_message(attachment)
         elif can_analyze:
-            text = f"Da giu lai {attachment.id}. AI dang phan tich thu/chi..."
+            text = f"Da giu lai {attachment.id}. AI dang phan tich thu/chi...\n{note_hint}"
         else:
-            text = f"Da giu lai {attachment.id}. Dung nut/lenh de nhap thu/chi."
+            text = f"Da giu lai {attachment.id}. Dung nut/lenh de nhap thu/chi.\n{note_hint}"
         return CallbackResult(
             ack="Da giu lai.",
             reply=TelegramReply(
                 chat_id=chat_id,
                 text=text,
-                reply_markup=attachment_keyboard(attachment.id),
+                reply_markup=intake_note_keyboard(attachment.id),
             ),
             run_ai_for=attachment.id if can_analyze else None,
         )
@@ -257,6 +267,7 @@ class TelegramCommandService:
             Path(attachment.file_path).unlink(missing_ok=True)
         self.db.delete(attachment)
         self.db.commit()
+        clear_awaiting_note(self.db, str(chat_id))
         return CallbackResult(
             ack="Da bo qua.",
             reply=TelegramReply(

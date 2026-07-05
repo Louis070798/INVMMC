@@ -151,6 +151,7 @@ def attachment_dict(item: TransferAttachmentModel) -> dict:
     return {
         "id": item.id,
         "project_id": item.project_id,
+        "owner_user_id": item.owner_user_id,
         "source": item.source,
         "file_name": item.file_name,
         "file_path": item.file_path,

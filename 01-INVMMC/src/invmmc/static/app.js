@@ -96,7 +96,8 @@ const tabLabels = {
     integrations: ["Kết nối", "Cấu hình Telegram BotFather, ngân hàng/VietQR và MoMo."],
     reports: ["Báo cáo", "Xuất báo cáo theo dự án, ngày, tuần hoặc tháng."],
     transfers: ["Chứng từ & Giao dịch", "Kiểm tra ảnh chuyển khoản và chứng từ gửi từ Telegram."],
-    settings: ["Cài đặt", "Thông tin cấu hình vận hành local và production."],
+    settings: ["Cài đặt", "Bot Telegram cá nhân và thông tin cấu hình hệ thống."],
+    admin: ["Quản trị", "Quản lý người dùng, phân quyền và bot Telegram của từng người."],
   },
   en: {
     dashboard: ["Dashboard", "Overview of budget, approvals, and documents by project."],
@@ -105,7 +106,8 @@ const tabLabels = {
     integrations: ["Integrations", "Configure Telegram BotFather, banks/VietQR, and MoMo."],
     reports: ["Reports", "Export reports by project, day, week, or month."],
     transfers: ["Documents & Transfers", "Check transfer images and documents sent from Telegram."],
-    settings: ["Settings", "Local and production system setting details."],
+    settings: ["Settings", "Your personal Telegram bot and system configuration."],
+    admin: ["Administration", "Manage users, roles, and each user's Telegram bot."],
   }
 };
 
@@ -572,10 +574,16 @@ function activeTabFromHash() {
 }
 
 async function refreshAll() {
-  await loadProjects();
-  await loadIntegrations();
-  await loadSummary();
-  await loadAttachments();
+  // Moi phan tai doc lap: user thuong khong co quyen xem summary/integrations
+  // van dung duoc tab chung tu + bot ca nhan cua minh.
+  const jobs = [loadProjects, loadIntegrations, loadSummary, loadAttachments, loadMyBot, loadAdminUsers];
+  for (const job of jobs) {
+    try {
+      await job();
+    } catch (error) {
+      console.warn(`${job.name} skipped:`, error.message);
+    }
+  }
 }
 
 els.periodSelect.addEventListener("change", loadSummary);
@@ -614,10 +622,16 @@ els.integrationList.addEventListener("click", (event) => {
   if (key) saveIntegration(key);
 });
 
+function isSystemAdmin() {
+  return Boolean(state.user?.roles?.includes("system_admin"));
+}
+
 async function checkAuth() {
   try {
     state.user = await api("/api/v1/auth/me");
     if (state.user) {
+      const navAdmin = document.querySelector("#navAdmin");
+      if (navAdmin) navAdmin.hidden = !isSystemAdmin();
       const nameEl = document.querySelector(".username");
       if (nameEl) nameEl.textContent = state.user.full_name || state.user.email;
 
@@ -901,6 +915,231 @@ els.attachmentRows.addEventListener("click", (event) => {
   if (confirmId) confirmAttachment(confirmId);
 });
 
+// ---- My Telegram bot (Settings) ----
+const myBotStatus = document.querySelector("#myBotStatus");
+const myBotToken = document.querySelector("#myBotToken");
+const saveMyBotBtn = document.querySelector("#saveMyBot");
+const removeMyBotBtn = document.querySelector("#removeMyBot");
+
+function botErrorMessage(raw) {
+  if (raw.includes("invalid_token")) return "Token không hợp lệ — Telegram từ chối (kiểm tra lại từ @BotFather).";
+  if (raw.includes("token_in_use")) return "Token này đã được người dùng khác đăng ký.";
+  if (raw.includes("telegram_unreachable")) return "Không kết nối được Telegram — kiểm tra mạng rồi thử lại.";
+  return raw;
+}
+
+function renderMyBot(info) {
+  if (!myBotStatus) return;
+  if (info.configured) {
+    const statusText = info.status === "active" ? "đang hoạt động" : info.status;
+    myBotStatus.textContent = `Bot @${info.bot_username || info.bot_id} — ${statusText} (token ${info.token_masked})`;
+    removeMyBotBtn.hidden = false;
+  } else {
+    myBotStatus.textContent = "Chưa cấu hình bot. Dán token từ @BotFather vào ô dưới.";
+    removeMyBotBtn.hidden = true;
+  }
+}
+
+async function loadMyBot() {
+  if (!myBotStatus) return;
+  try {
+    renderMyBot(await api("/api/v1/me/telegram-bot"));
+  } catch (error) {
+    myBotStatus.textContent = "Không tải được trạng thái bot.";
+  }
+}
+
+if (saveMyBotBtn) {
+  saveMyBotBtn.addEventListener("click", async () => {
+    const token = myBotToken.value.trim();
+    if (!token) {
+      alert("Dán token bot vào ô trước đã.");
+      return;
+    }
+    saveMyBotBtn.disabled = true;
+    try {
+      const info = await api("/api/v1/me/telegram-bot", {
+        method: "PUT",
+        body: JSON.stringify({ token }),
+      });
+      myBotToken.value = "";
+      renderMyBot(info);
+      alert(`Đã kết nối bot @${info.bot_username}. Gửi /start cho bot để bắt đầu.`);
+    } catch (error) {
+      alert(botErrorMessage(error.message));
+    } finally {
+      saveMyBotBtn.disabled = false;
+    }
+  });
+}
+
+if (removeMyBotBtn) {
+  removeMyBotBtn.addEventListener("click", async () => {
+    if (!confirm("Gỡ bot khỏi tài khoản? Hệ thống sẽ ngừng nhận tin từ bot này.")) return;
+    try {
+      await api("/api/v1/me/telegram-bot", { method: "DELETE" });
+      renderMyBot({ configured: false });
+    } catch (error) {
+      alert(botErrorMessage(error.message));
+    }
+  });
+}
+
+// ---- Admin: user management ----
+const ROLE_OPTIONS = [
+  ["employee", "Nhân viên"],
+  ["project_member", "Thành viên dự án"],
+  ["project_manager", "Quản lý dự án"],
+  ["department_head", "Trưởng bộ phận"],
+  ["finance_controller", "Kiểm soát tài chính"],
+  ["finance_manager", "Trưởng phòng tài chính"],
+  ["accountant", "Kế toán"],
+  ["treasury", "Thủ quỹ"],
+  ["cfo", "CFO"],
+  ["ceo", "CEO"],
+  ["auditor", "Kiểm toán"],
+  ["system_admin", "Quản trị hệ thống"],
+];
+
+const userDialog = document.querySelector("#userDialog");
+const userForm = document.querySelector("#userForm");
+const userDialogTitle = document.querySelector("#userDialogTitle");
+const userRows = document.querySelector("#userRows");
+const roleChecks = document.querySelector("#roleChecks");
+const userStatusLabel = document.querySelector("#userStatusLabel");
+
+function adminErrorMessage(raw) {
+  if (raw.includes("email_exists")) return "Email này đã có tài khoản.";
+  if (raw.includes("cannot_remove_own_admin_role")) return "Không thể tự bỏ quyền quản trị của chính mình.";
+  if (raw.includes("cannot_disable_self")) return "Không thể tự khóa tài khoản của chính mình.";
+  if (raw.includes("invalid_role")) return "Vai trò không hợp lệ.";
+  if (raw.includes("user_not_found")) return "Người dùng không tồn tại.";
+  return raw;
+}
+
+async function loadAdminUsers() {
+  if (!isSystemAdmin() || !userRows) return;
+  state.users = await api("/api/v1/admin/users");
+  renderUserRows();
+}
+
+function renderUserRows() {
+  if (!userRows) return;
+  userRows.innerHTML = "";
+  for (const item of state.users || []) {
+    const roleNames = item.roles
+      .map((role) => ROLE_OPTIONS.find(([value]) => value === role)?.[1] || role)
+      .join(", ");
+    const bot = item.bot?.configured
+      ? `@${item.bot.bot_username || item.bot.bot_id}`
+      : "—";
+    const toggleLabel = item.status === "active" ? "Khóa" : "Mở khóa";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${item.email}</td>
+      <td>${item.full_name}</td>
+      <td>${roleNames}</td>
+      <td>${bot}</td>
+      <td>${statusPill(item.status)}</td>
+      <td class="row-actions">
+        <button type="button" data-edit-user="${item.id}">Sửa</button>
+        <button type="button" class="danger" data-toggle-user="${item.id}">${toggleLabel}</button>
+      </td>
+    `;
+    userRows.append(tr);
+  }
+}
+
+function fillRoleChecks(selected) {
+  roleChecks.innerHTML = "";
+  for (const [value, label] of ROLE_OPTIONS) {
+    const wrap = document.createElement("label");
+    const checked = selected.includes(value) ? "checked" : "";
+    wrap.innerHTML = `<input type="checkbox" value="${value}" ${checked} /> ${label}`;
+    roleChecks.append(wrap);
+  }
+}
+
+function openUserDialog(item) {
+  userForm.reset();
+  userForm.elements.id.value = item?.id || "";
+  userForm.elements.email.value = item?.email || "";
+  userForm.elements.email.disabled = Boolean(item);
+  userForm.elements.full_name.value = item?.full_name || "";
+  userForm.elements.password.placeholder = item
+    ? "Để trống nếu giữ mật khẩu cũ"
+    : "Tối thiểu 8 ký tự";
+  userForm.elements.password.required = !item;
+  userStatusLabel.hidden = !item;
+  if (item) userForm.elements.status.value = item.status;
+  fillRoleChecks(item?.roles || ["employee"]);
+  userDialogTitle.textContent = item ? `Sửa: ${item.email}` : "Thêm người dùng";
+  userDialog.showModal();
+}
+
+async function submitUserForm(event) {
+  event.preventDefault();
+  const id = userForm.elements.id.value;
+  const roles = Array.from(roleChecks.querySelectorAll("input:checked")).map((el) => el.value);
+  try {
+    if (id) {
+      const payload = {
+        full_name: userForm.elements.full_name.value,
+        roles,
+        status: userForm.elements.status.value,
+      };
+      if (userForm.elements.password.value) payload.password = userForm.elements.password.value;
+      await api(`/api/v1/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+    } else {
+      await api("/api/v1/admin/users", {
+        method: "POST",
+        body: JSON.stringify({
+          email: userForm.elements.email.value,
+          full_name: userForm.elements.full_name.value,
+          password: userForm.elements.password.value,
+          roles,
+        }),
+      });
+    }
+    userDialog.close();
+    await loadAdminUsers();
+  } catch (error) {
+    alert(adminErrorMessage(error.message));
+  }
+}
+
+async function toggleUserStatus(id) {
+  const item = (state.users || []).find((row) => row.id === id);
+  if (!item) return;
+  const next = item.status === "active" ? "disabled" : "active";
+  const verb = next === "disabled" ? "Khóa" : "Mở khóa";
+  if (!confirm(`${verb} tài khoản ${item.email}?`)) return;
+  try {
+    await api(`/api/v1/admin/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: next }),
+    });
+    await loadAdminUsers();
+  } catch (error) {
+    alert(adminErrorMessage(error.message));
+  }
+}
+
+if (userForm) {
+  userForm.addEventListener("submit", submitUserForm);
+  document.querySelector("#newUserBtn").addEventListener("click", () => openUserDialog(null));
+  document.querySelector("#closeUserDialog").addEventListener("click", () => userDialog.close());
+  userRows.addEventListener("click", (event) => {
+    const editId = event.target.dataset.editUser;
+    const toggleId = event.target.dataset.toggleUser;
+    if (editId) {
+      const item = (state.users || []).find((row) => row.id === editId);
+      if (item) openUserDialog(item);
+    }
+    if (toggleId) toggleUserStatus(toggleId);
+  });
+}
+
 const translations = {
   vi: {
     nav_overview: "Tổng quan",
@@ -953,6 +1192,7 @@ const translations = {
     th_counterparty: "Đối tác",
     th_review: "Duyệt",
     th_actions: "Thao tác",
+    nav_admin: "Quản trị",
   },
   en: {
     nav_overview: "Overview",
@@ -1005,6 +1245,7 @@ const translations = {
     th_counterparty: "Counterparty",
     th_review: "Review",
     th_actions: "Actions",
+    nav_admin: "Admin",
   }
 };
 

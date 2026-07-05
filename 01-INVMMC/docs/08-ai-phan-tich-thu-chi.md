@@ -73,6 +73,20 @@ Sua chung tu da `confirmed` se tu dong quay ve `pending_review` de tranh bao cao
 
 Migration: SQLite local tu them cot thieu khi khoi dong (`ensure_schema_migrations` trong `persistence/bootstrap.py`). Production PostgreSQL dung cong cu migration rieng.
 
+## 4a. Nhap noi dung sau khi gui anh
+
+Sau khi gui anh (hoac bam "Van luu" voi anh trung), bot nhac:
+`>>> NHAP NOI DUNG: go tin nhan tiep theo de luu dien giai cho chung tu`.
+
+- Tin nhan text thuong (khong bat dau bang `/`) ke tiep cua chinh chat do duoc luu vao
+  truong `note` cua chung tu vua tao.
+- Noi dung go vao con duoc quet them: co ma `PRJxxx` -> tu gan du an (neu chua gan);
+  co so tien >= 1000 -> dien so tien (neu chua co).
+- Khong muon nhap: bam nut "Bo qua nhap noi dung" (callback `ns:`).
+- Trang thai cho nhap luu trong bang `chat_states` (moi chat mot trang thai, TTL 6 gio;
+  qua han thi tin nhan text tro lai binh thuong, khong bi hieu nham la noi dung).
+- Lenh `/...` van hoat dong binh thuong trong luc dang cho nhap noi dung.
+
 ## 4b. Nut bam (inline keyboard)
 
 Thao tac chinh dung NUT duoi tin nhan, khong can go cu phap:
