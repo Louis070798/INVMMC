@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>INVMMC - Hệ Thống Quản Lý Tài Chính</title>
+  <!-- Light-mode modern web font -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --line: #e2e8f0;
+      --radius: 16px;
+    }
+
+    body {
+      align-items: center;
+      background: var(--bg);
+      background-image:
+        linear-gradient(rgba(2, 132, 199, 0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(2, 132, 199, 0.015) 1px, transparent 1px);
+      background-size: 20px 20px;
+      color: var(--text);
+      display: flex;
+      font-family: 'Plus Jakarta Sans', Inter, system-ui, -apple-system, sans-serif;
+      justify-content: center;
+      margin: 0;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    form {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.04), 0 20px 48px rgba(15, 23, 42, 0.04);
+      display: grid;
+      gap: 18px;
+      max-width: 380px;
+      padding: 32px;
+      width: calc(100% - 32px);
+      transition: transform 0.2s ease;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 800;
+      font-size: 20px;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .brand-logo {
+      background: var(--primary);
+      color: white;
+      height: 36px;
+      width: 36px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 800;
+      margin: 0;
+    }
+
+    p {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin: 6px 0 0;
+      line-height: 1.5;
+    }
+
+    label {
+      display: grid;
+      font-size: 13px;
+      font-weight: 600;
+      gap: 6px;
+      color: var(--text-muted);
+    }
+
+    input {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+      min-height: 42px;
+      padding: 0 12px;
+      color: var(--text);
+      background-color: #fafbfc;
+      transition: all 0.2s ease;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--primary);
+      background-color: #ffffff;
+      box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.08);
+    }
+
+    button {
+      background: var(--primary);
+      border: 0;
+      border-radius: 8px;
+      color: #ffffff;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      min-height: 44px;
+      transition: background-color 0.2s;
+      margin-top: 8px;
+    }
+
+    button:hover {
+      background: var(--primary-hover);
+    }
+
+    .error {
+      color: #ef4444;
+      font-size: 12px;
+      font-weight: 600;
+      min-height: 18px;
+    }
+  </style>
+</head>
+
+<body>
+  <form id="loginForm">
+    <div>
+      <div class="brand">
+        <span class="brand-logo">⚡</span>
+        <span>INVMMC Finance</span>
+      </div>
+      <p>Đăng nhập bằng tài khoản quản trị để kiểm tra phê duyệt và thanh toán dự án.</p>
+    </div>
+    <label>
+      Email
+      <input name="email" autocomplete="username" required type="email" placeholder="admin@invmmc.local" />
+    </label>
+    <label>
+      Mật khẩu
+      <input name="password" autocomplete="current-password" required type="password" placeholder="••••••••" />
+    </label>
+    <div class="error" id="error"></div>
+    <button type="submit">Đăng nhập</button>
+  </form>
+  <script>
+    document.querySelector("#loginForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const errorEl = document.querySelector("#error");
+      errorEl.textContent = "";
+      try {
+        const response = await fetch("/api/v1/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: form.get("email"),
+            password: form.get("password"),
+          }),
+        });
+        if (!response.ok) {
+          errorEl.textContent = "Sai tài khoản hoặc mật khẩu.";
+          return;
+        }
+        window.location.href = "/static/dashboard.html";
+      } catch (e) {
+        errorEl.textContent = "Không thể kết nối máy chủ.";
+      }
+    });
+  </script>
+</body>
+
+</html>

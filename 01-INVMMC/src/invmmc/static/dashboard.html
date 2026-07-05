@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>INVMMC Finance Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <!-- Light-mode modern web font -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet" />
+</head>
+
+<body>
+  <div class="app-container">
+    <!-- Sakuku-Style Top Horizontal Navigation Bar -->
+    <header class="top-nav">
+      <div class="nav-left">
+        <div class="brand">
+          <span class="brand-logo">⚡</span>
+          <span>INVMMC Finance</span>
+        </div>
+        <nav class="nav-links">
+          <a class="active" href="#dashboard" data-tab="dashboard" data-i18n="nav_overview">Overview</a>
+          <a href="#projects" data-tab="projects" data-i18n="nav_projects">Projects</a>
+          <a href="#reports" data-tab="reports" data-i18n="nav_reports">Reports</a>
+          <a href="#approvals" data-tab="approvals"><span data-i18n="nav_approvals">Approvals</span> <span class="badge"
+              id="navPending">0</span></a>
+          <a href="#integrations" data-tab="integrations" data-i18n="nav_integrations">Integrations</a>
+          <a href="#transfers" data-tab="transfers"><span data-i18n="nav_transfers">Transfers</span> <span
+              class="badge warning" id="navTransfers">0</span></a>
+          <a href="#settings" data-tab="settings" data-i18n="nav_settings">Settings</a>
+        </nav>
+      </div>
+
+      <div class="nav-right">
+        <div class="system-status">
+          <span class="live-dot"></span>
+          <span id="periodLabel">Last synced: loading</span>
+          <button id="refreshBtn" class="refresh-button" type="button" title="Refresh">↻</button>
+        </div>
+        <!-- Language Select & Dark Theme Switch -->
+        <div class="nav-actions">
+          <button id="themeToggle" class="theme-toggle-btn" type="button" title="Toggle Light/Dark Theme">☀️</button>
+          <select id="langSelect" class="lang-select" aria-label="Select language / Chọn ngôn ngữ">
+            <option value="vi">VI</option>
+            <option value="en" selected>EN</option>
+          </select>
+        </div>
+        <div class="user-profile">
+          <span class="bell-icon" id="logoutBtn" title="Đăng xuất" style="cursor:pointer;margin-right:10px;">➔</span>
+          <div class="avatar">A</div>
+          <div class="user-info">
+            <span class="username">Admin</span>
+            <span class="role">Finance Control</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Responsive Content Layout Container -->
+    <div class="main-layout-grid">
+      <!-- Sakuku-Style Left Side Column (My Card & Quick Controls) -->
+      <aside class="side-column">
+        <!-- "My Card" Module -->
+        <div class="card-module">
+          <div class="module-header">
+            <h3 data-i18n="card_title">System Card</h3>
+          </div>
+          <!-- Futuristic Credit Card design matching mockup -->
+          <div class="debit-card">
+            <div class="chip-container">
+              <div class="card-logo">INVMMC</div>
+              <div class="contactless">≓</div>
+            </div>
+            <div class="card-details">
+              <div class="card-label" data-i18n="card_active_conn">Active Connection</div>
+              <div class="card-value">SQLite local</div>
+            </div>
+            <div class="card-footer">
+              <div class="holder">
+                <div class="label">ENGINE</div>
+                <div class="name">SQLITE_FILE</div>
+              </div>
+              <div class="expiry">
+                <div class="label">STATUS</div>
+                <div class="val">ACTIVE</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-sub-info">
+            <div class="info-row">
+              <span class="lbl" data-i18n="card_host">Storage Host</span>
+              <span class="val" data-i18n="card_host_val">Local Database</span>
+            </div>
+            <div class="info-row">
+              <span class="lbl" data-i18n="card_webhook">Webhook Status</span>
+              <span class="val status-ok" data-i18n="card_webhook_val">Connected</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- "Quick Transfer" / Controls Module -->
+        <div class="controls-module">
+          <div class="module-header">
+            <h3 data-i18n="ctrl_title">Dashboard Controls</h3>
+          </div>
+          <div class="control-form">
+            <label>
+              <span data-i18n="ctrl_period">Select Period</span>
+              <select id="periodSelect" aria-label="Report period">
+                <option value="day" data-i18n="opt_today">Today</option>
+                <option value="week" data-i18n="opt_week">This week</option>
+                <option value="month" selected data-i18n="opt_month">This month</option>
+              </select>
+            </label>
+
+            <label>
+              <span data-i18n="ctrl_project">Filter Project</span>
+              <select id="projectSelect" aria-label="Project filter">
+                <option value="" data-i18n="opt_all_projects">All Projects</option>
+              </select>
+            </label>
+
+            <button id="newProjectBtn" type="button" class="btn-primary-action" data-i18n="btn_new_project">
+              + New Project
+            </button>
+            <button id="newExpenseBtn" type="button" class="btn-secondary-action" data-i18n="btn_new_expense">
+              + Request Expense
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right Side Main Workspace Area -->
+      <main class="workspace">
+        <h1 class="sr-only">Project Finance Control</h1>
+
+        <!-- Active View Header Details -->
+        <section class="tab-title">
+          <div>
+            <h2 id="tabTitle">Dashboard</h2>
+            <p id="tabSubtitle">Tổng quan ngân sách, phê duyệt và chứng từ theo dự án.</p>
+          </div>
+        </section>
+
+        <!-- Sakuku-Style Horizontal KPI Grid -->
+        <section class="kpi-grid" id="overview" data-views="dashboard">
+          <article class="metric metric-blue">
+            <div class="metric-accent"></div>
+            <div class="metric-body">
+              <span data-i18n="kpi_budget">Total Budget</span>
+              <strong id="kpiBudget">-</strong>
+              <small id="budgetSub">100% of plan</small>
+            </div>
+            <div class="metric-track"><b id="budgetTrack"></b></div>
+          </article>
+
+          <article class="metric metric-green">
+            <div class="metric-accent"></div>
+            <div class="metric-body">
+              <span data-i18n="kpi_actual">Total Actual</span>
+              <strong id="kpiActual">-</strong>
+              <small id="actualSub">0% of budget</small>
+            </div>
+            <div class="metric-track"><b id="actualTrack"></b></div>
+          </article>
+
+          <article class="metric metric-yellow">
+            <div class="metric-accent"></div>
+            <div class="metric-body">
+              <span data-i18n="kpi_committed">Committed</span>
+              <strong id="kpiCommitted">-</strong>
+              <small id="committedSub">0% of budget</small>
+            </div>
+            <div class="metric-track amber"><b id="committedTrack"></b></div>
+          </article>
+
+          <article class="metric metric-gray">
+            <div class="metric-accent"></div>
+            <div class="metric-body">
+              <span data-i18n="kpi_available">Remaining Budget</span>
+              <strong id="kpiAvailable">-</strong>
+              <small id="availableSub">0% of budget</small>
+            </div>
+            <div class="metric-track gray"><b id="availableTrack"></b></div>
+          </article>
+
+          <article class="metric metric-orange">
+            <div class="metric-accent"></div>
+            <div class="metric-body">
+              <span data-i18n="kpi_pending">Pending Approvals</span>
+              <strong id="kpiPending">-</strong>
+              <small id="pendingValue">-</small>
+            </div>
+          </article>
+
+          <article class="metric metric-red">
+            <div class="metric-accent"></div>
+            <div class="metric-body">
+              <span data-i18n="kpi_transfers">Unmatched Transfers</span>
+              <strong id="kpiTransfers">-</strong>
+              <small id="transferValue">-</small>
+            </div>
+          </article>
+        </section>
+
+        <!-- Sakuku-Style Main Panels Grid -->
+        <section class="dashboard-grid">
+
+          <!-- Budget vs Actual Chart Panel -->
+          <section class="panel chart-panel" id="projects" data-views="dashboard,projects">
+            <div class="panel-header">
+              <h2 data-i18n="panel_chart_title">Budget vs Actual by Project</h2>
+              <div class="header-actions">
+                <select aria-label="Chart grouping">
+                  <option data-i18n="opt_by_project">By Project</option>
+                </select>
+              </div>
+            </div>
+            <div class="chart-legend">
+              <span><i class="legend-budget"></i><span data-i18n="legend_budget">Budget</span></span>
+              <span><i class="legend-actual"></i><span data-i18n="legend_actual">Actual</span></span>
+            </div>
+            <div id="projectBars" class="column-chart"></div>
+          </section>
+
+          <!-- Approval Queue Table Panel -->
+          <section class="panel table-panel" id="approvals" data-views="dashboard,approvals">
+            <div class="panel-header">
+              <h2 data-i18n="panel_approvals_title">Approval Queue</h2>
+              <a href="#approvals" data-i18n="btn_view_all">View all</a>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="th_id">ID</th>
+                    <th data-i18n="th_project">Project</th>
+                    <th data-i18n="th_desc">Vendor / Description</th>
+                    <th data-i18n="th_amount">Amount</th>
+                    <th data-i18n="th_request_by">Requested By</th>
+                    <th data-i18n="th_date">Date</th>
+                    <th data-i18n="th_status">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="approvalRows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Telegram & API Integrations Panel -->
+          <section class="panel integrations-panel" id="integrations" data-views="integrations">
+            <div class="panel-header">
+              <h2>Integrations</h2>
+              <span id="saveState"></span>
+            </div>
+            <div class="botfather-panel">
+              <h3>Telegram BotFather Setup</h3>
+              <p>Tạo bot bằng BotFather, lấy token và đặt vào biến môi trường `TELEGRAM_BOT_TOKEN` khi chạy production.
+              </p>
+              <div class="botfather-grid">
+                <label>
+                  Bot username
+                  <input id="telegramBotName" placeholder="@invmmc_finance_bot" />
+                </label>
+                <label>
+                  Webhook secret
+                  <input id="telegramWebhookSecret" placeholder="secret tu tao" />
+                </label>
+                <label>
+                  Webhook URL
+                  <input id="telegramWebhookUrl" readonly value="http://127.0.0.1:8000/telegram/webhook" />
+                </label>
+                <label>
+                  Token status
+                  <select id="telegramTokenStatus">
+                    <option value="env">Stored in .env</option>
+                    <option value="pending">Waiting for BotFather token</option>
+                    <option value="sandbox">Sandbox only</option>
+                  </select>
+                </label>
+              </div>
+              <button id="saveTelegramBotFather" type="button" class="btn-primary">Save Telegram Setup</button>
+            </div>
+            <div id="integrationList" class="integration-list"></div>
+          </section>
+
+          <!-- Export / Reports Panel -->
+          <section class="panel export-panel" id="reports" data-views="reports">
+            <div class="panel-header">
+              <h2>Export</h2>
+            </div>
+            <div class="export-form">
+              <label>
+                <span data-i18n="lbl_report_type">Report type</span>
+                <div class="split-inputs">
+                  <select id="exportType">
+                    <option value="projects" data-i18n="opt_report_projects">Project summary (budget, thu/chi)</option>
+                    <option value="transfers" data-i18n="opt_report_transfers">Transaction detail (thu/chi)</option>
+                  </select>
+                  <select id="exportProject">
+                    <option>All Projects</option>
+                  </select>
+                </div>
+              </label>
+              <label>
+                <span data-i18n="ctrl_period">Select Period</span>
+                <div class="period-buttons" id="exportPeriodButtons">
+                  <button data-export="day" type="button" data-i18n="opt_p_day">Day</button>
+                  <button data-export="week" type="button" data-i18n="opt_p_week">Week</button>
+                  <button data-export="month" class="selected" type="button" data-i18n="opt_p_month">Month</button>
+                  <button data-export="year" type="button" data-i18n="opt_p_year">Year</button>
+                  <button data-export="custom" type="button" data-i18n="opt_p_custom">Custom</button>
+                </div>
+              </label>
+              <div class="split-inputs" id="customRange" hidden>
+                <label>
+                  <span data-i18n="lbl_from">From</span>
+                  <input type="date" id="exportStartDate" />
+                </label>
+                <label>
+                  <span data-i18n="lbl_to">To</span>
+                  <input type="date" id="exportEndDate" />
+                </label>
+              </div>
+              <p id="rangeLabel" hidden></p>
+              <button id="exportReportBtn" class="export-button" type="button" data-i18n="btn_export">
+                Export CSV
+              </button>
+              <p id="reportScope">Scope: all projects</p>
+            </div>
+          </section>
+
+          <!-- Document / Telegram Intake Intake Panel -->
+          <section class="panel table-panel document-panel" id="transfers" data-views="dashboard,transfers">
+            <div class="panel-header">
+              <h2 data-i18n="panel_receipts_title">Document / Image Intake (from Telegram)</h2>
+              <div class="panel-header-actions">
+                <button id="newAttachmentBtn" type="button" data-i18n="btn_new_attachment">+ Add document</button>
+                <a href="#transfers" data-i18n="btn_view_all">View all</a>
+              </div>
+            </div>
+            <div class="transfer-export-bar">
+              <select id="transferExportPeriod" aria-label="Export period">
+                <option value="day" data-i18n="opt_export_day">By day</option>
+                <option value="month" selected data-i18n="opt_export_month">By month</option>
+                <option value="year" data-i18n="opt_export_year">By year</option>
+                <option value="custom" data-i18n="opt_export_custom">Custom range</option>
+              </select>
+              <div class="export-range" id="transferExportRange" hidden>
+                <input type="date" id="transferExportStart" aria-label="Start date" />
+                <span>→</span>
+                <input type="date" id="transferExportEnd" aria-label="End date" />
+              </div>
+              <select id="transferExportProject" aria-label="Export project filter">
+                <option value="" data-i18n="opt_all_projects">All Projects</option>
+              </select>
+              <button id="transferExportBtn" class="export-button" type="button" data-i18n="btn_export_transfers">
+                Export Report
+              </button>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="th_received">Received</th>
+                    <th data-i18n="th_project">Project</th>
+                    <th data-i18n="th_type">Type</th>
+                    <th data-i18n="th_amount">Amount</th>
+                    <th data-i18n="th_counterparty">Counterparty</th>
+                    <th data-i18n="th_preview">Preview</th>
+                    <th data-i18n="th_review">Review</th>
+                    <th data-i18n="th_actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="attachmentRows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Core operational Settings Panel -->
+          <section class="panel settings-panel" id="settings" data-views="settings">
+            <div class="panel-header">
+              <h2 data-i18n="panel_settings_title">Settings</h2>
+            </div>
+            <div class="settings-grid">
+              <article>
+                <strong>Database</strong>
+                <span>SQLite local, có thể đổi sang PostgreSQL bằng `DATABASE_URL`.</span>
+              </article>
+              <article>
+                <strong>Uploads</strong>
+                <span>Ảnh/chứng từ Telegram lưu trong thư mục `data/uploads`.</span>
+              </article>
+              <article>
+                <strong>Security</strong>
+                <span>Token thật nên lưu trong `.env`, không commit lên git.</span>
+              </article>
+            </div>
+          </section>
+        </section>
+
+        <!-- Summary Telemetry Info Footer -->
+        <footer class="summary-footer">
+          <span id="footerProjects">Projects: -</span>
+          <span id="footerBudget">Total Budget: -</span>
+          <span id="footerActual">Total Actual: -</span>
+          <span id="footerCommitted">Committed: -</span>
+          <span id="footerAvailable">Remaining Budget: -</span>
+          <span id="footerPending">Pending Approvals: -</span>
+          <span id="footerTransfers">Unmatched Transfers: -</span>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <!-- Dialog for Project Creation -->
+  <dialog id="projectDialog">
+    <form id="projectForm" method="dialog">
+      <div class="dialog-header">
+        <h2>New Project</h2>
+        <button type="button" id="closeProjectDialog" title="Close">×</button>
+      </div>
+      <label>
+        Code
+        <input name="code" required placeholder="PRJ004" />
+      </label>
+      <label>
+        Name
+        <input name="name" required placeholder="New finance initiative" />
+      </label>
+      <label>
+        Owner
+        <input name="owner" required placeholder="Project owner" />
+      </label>
+      <label>
+        Department
+        <input name="department" required placeholder="Finance" />
+      </label>
+      <label>
+        Budget VND
+        <input name="budget_amount" type="number" min="1" required placeholder="100000000" />
+      </label>
+      <button type="submit">Create</button>
+    </form>
+  </dialog>
+
+  <!-- Dialog for Expense Creation -->
+  <dialog id="expenseDialog">
+    <form id="expenseForm" method="dialog">
+      <div class="dialog-header">
+        <h2>New Expense Request</h2>
+        <button type="button" id="closeExpenseDialog" title="Close">×</button>
+      </div>
+      <label>
+        Project
+        <select name="project_id" id="expenseProjectSelect" required>
+        </select>
+      </label>
+      <label>
+        Amount (VND)
+        <input name="amount" id="expenseAmountInput" type="number" min="1" required placeholder="500000" />
+      </label>
+      <!-- Real-time Approval Requirement Alert -->
+      <div id="expenseApprovalLevel" class="approval-level-warning">
+        Minimum Authorization required: Project Manager
+      </div>
+      <label>
+        Budget Line Item Code
+        <select name="budget_line_code" required>
+          <option value="OPS">OPS - Operations</option>
+          <option value="MKT">MKT - Marketing</option>
+          <option value="DEV">DEV - Software Development</option>
+          <option value="HR">HR - Human Resources</option>
+          <option value="TRV">TRV - Travel & Expense</option>
+        </select>
+      </label>
+      <label>
+        Vendor ID / Name
+        <input name="vendor_id" required placeholder="Công ty ABC" />
+      </label>
+      <label>
+        Description
+        <input name="description" required placeholder="Hóa đơn thanh toán thiết bị mạng" />
+      </label>
+      <button type="submit">Submit Request</button>
+    </form>
+  </dialog>
+
+  <!-- Dialog for Document / Attachment Create & Edit -->
+  <dialog id="attachmentDialog">
+    <form id="attachmentForm" method="dialog">
+      <div class="dialog-header">
+        <h2 id="attachmentDialogTitle">Chứng từ</h2>
+        <button type="button" id="closeAttachmentDialog" title="Close">×</button>
+      </div>
+      <input type="hidden" name="id" />
+      <div class="form-grid">
+        <label class="full">
+          Dự án
+          <select name="project_code" id="attachProjectSelect">
+            <option value="">Chưa gắn dự án</option>
+          </select>
+        </label>
+        <label>
+          Loại giao dịch
+          <select name="transaction_type">
+            <option value="unknown">Chưa rõ</option>
+            <option value="thu">THU (tiền vào)</option>
+            <option value="chi">CHI (tiền ra)</option>
+          </select>
+        </label>
+        <label>
+          Số tiền (VND)
+          <input name="amount" type="number" min="0" placeholder="1200000" />
+        </label>
+        <label>
+          Đối tác
+          <input name="counterparty" placeholder="Công ty ABC" />
+        </label>
+        <label>
+          Ngân hàng
+          <input name="bank_name" placeholder="Vietcombank" />
+        </label>
+        <label>
+          Mã GD / Nội dung CK
+          <input name="reference" placeholder="FT26070412345" />
+        </label>
+        <label>
+          Thời gian giao dịch
+          <input name="transacted_at" placeholder="21/06/2026 10:04" />
+        </label>
+        <label class="full">
+          Ghi chú
+          <input name="note" placeholder="Ghi chú thêm cho chứng từ" />
+        </label>
+        <label class="full" id="attachmentFileLabel">
+          Ảnh chứng từ (tùy chọn)
+          <input name="file" type="file" accept="image/*" />
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" id="attachmentSaveBtn" data-review="pending_review" class="secondary">
+          Lưu (chờ duyệt)
+        </button>
+        <button type="submit" id="attachmentConfirmBtn" data-review="confirmed" class="confirm">
+          Lưu &amp; Xác nhận
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+
+</html>
