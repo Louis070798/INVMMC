@@ -41,6 +41,15 @@ class ProjectCreateRequest(BaseModel):
     budget_amount: Decimal = Field(gt=0)
 
 
+class ProjectUpdateRequest(BaseModel):
+    code: str | None = Field(default=None, min_length=2, max_length=30)
+    name: str | None = None
+    owner: str | None = None
+    department: str | None = None
+    budget_amount: Decimal | None = Field(default=None, gt=0)
+    status: str | None = None
+
+
 class ProjectResponse(BaseModel):
     id: str
     code: str
@@ -107,3 +116,16 @@ class AuthUserResponse(BaseModel):
     email: str
     full_name: str
     roles: list[str]
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8)
+
+
+class EmailTestRequest(BaseModel):
+    to_email: str

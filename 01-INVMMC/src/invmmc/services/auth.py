@@ -12,10 +12,11 @@ from sqlalchemy.orm import Session
 
 from invmmc.core.database import get_db
 from invmmc.domain.enums import Role
-from invmmc.persistence.models import UserModel, UserSessionModel
+from invmmc.persistence.models import PasswordResetTokenModel, UserModel, UserSessionModel
 
 SESSION_COOKIE_NAME = "invmmc_session"
 SESSION_DAYS = 7
+RESET_TOKEN_MINUTES = 30
 
 FINANCE_READ_ROLES = {
     Role.SYSTEM_ADMIN,
@@ -126,6 +127,55 @@ def authenticate_user(db: Session, email: str, password: str) -> UserModel | Non
     if not verify_password(password, user.password_hash):
         return None
     return user
+
+
+def create_password_reset_token(db: Session, user: UserModel) -> str:
+    """Vo hieu token cu chua dung cua user nay truoc khi tao token moi."""
+    old_tokens = db.scalars(
+        select(PasswordResetTokenModel).where(
+            PasswordResetTokenModel.user_id == user.id,
+            PasswordResetTokenModel.used_at.is_(None),
+        )
+    ).all()
+    for old in old_tokens:
+        old.used_at = datetime.now(UTC)
+
+    token = secrets.token_urlsafe(32)
+    db.add(
+        PasswordResetTokenModel(
+            id=f"prt-{uuid4().hex[:12]}",
+            user_id=user.id,
+            token_hash=hash_token(token),
+            expires_at=datetime.now(UTC) + timedelta(minutes=RESET_TOKEN_MINUTES),
+        )
+    )
+    db.commit()
+    return token
+
+
+def consume_password_reset_token(db: Session, token: str) -> UserModel | None:
+    """Tra ve user neu token con hop le va DANH DAU DA DUNG (mot lan duy nhat)."""
+    reset = db.scalar(
+        select(PasswordResetTokenModel).where(PasswordResetTokenModel.token_hash == hash_token(token))
+    )
+    if not reset or reset.used_at is not None or is_expired(reset.expires_at):
+        return None
+    reset.used_at = datetime.now(UTC)
+    db.commit()
+    return db.get(UserModel, reset.user_id)
+
+
+def revoke_all_sessions(db: Session, user_id: str) -> None:
+    sessions = db.scalars(
+        select(UserSessionModel).where(
+            UserSessionModel.user_id == user_id,
+            UserSessionModel.revoked_at.is_(None),
+        )
+    ).all()
+    now = datetime.now(UTC)
+    for session in sessions:
+        session.revoked_at = now
+    db.commit()
 
 
 def revoke_session(db: Session, token: str | None) -> None:

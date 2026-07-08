@@ -5,6 +5,9 @@ class Settings(BaseSettings):
     app_env: str = "local"
     app_name: str = "INVMMC Project Finance Control"
     app_base_url: str = "http://localhost:8000"
+    # Dung boi scripts/telegram_polling.py (doc .env truc tiep, khong qua Settings
+    # nay) - khai bao o day de gia tri thua trong .env khong lam vo pydantic.
+    internal_webhook_base_url: str = "http://127.0.0.1:8000"
     database_url: str = "sqlite:///./data/invmmc.db"
     redis_url: str = "redis://localhost:6379/0"
     upload_dir: str = "./data/uploads"
@@ -34,6 +37,16 @@ class Settings(BaseSettings):
     bank_webhook_secret: str = ""
 
     jwt_secret: str = "change-me"
+
+    # Email quen mat khau. Trong khi SMTP_HOST rong: khong gui that, chi log
+    # link reset ra console (de dev/test khong can tai khoan SMTP that).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_from_name: str = "INVMMC Finance"
+    smtp_use_tls: bool = True
 
     admin_email: str = "admin@invmmc.local"
     admin_password: str = "Admin@123456"

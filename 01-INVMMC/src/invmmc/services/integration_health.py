@@ -23,6 +23,9 @@ async def enrich_integration_status(row: IntegrationConfigModel) -> dict[str, An
     elif row.key == "momo":
         status = check_momo_status()
         enabled = status == "configured"
+    elif row.key == "email":
+        status = check_email_status(config)
+        enabled = status == "configured"
 
     return {
         "key": row.key,
@@ -121,3 +124,9 @@ def check_momo_status() -> str:
     if all(required):
         return "configured"
     return "missing_business_credentials"
+
+
+def check_email_status(config: dict[str, Any]) -> str:
+    if config.get("smtp_host") and config.get("smtp_username"):
+        return "configured"
+    return "needs_smtp_config"

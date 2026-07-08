@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>INVMMC Finance Dashboard</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/styles.css?v=4" />
   <!-- Light-mode modern web font -->
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
     rel="stylesheet" />
@@ -48,12 +48,20 @@
             <option value="en" selected>EN</option>
           </select>
         </div>
-        <div class="user-profile">
-          <span class="bell-icon" id="logoutBtn" title="Đăng xuất" style="cursor:pointer;margin-right:10px;">➔</span>
-          <div class="avatar">A</div>
-          <div class="user-info">
+        <div class="user-profile" id="userProfileToggle">
+          <button type="button" class="user-trigger" id="userTriggerBtn">
+            <div class="avatar">A</div>
             <span class="username">Admin</span>
-            <span class="role">Finance Control</span>
+            <span class="dropdown-caret">⌄</span>
+          </button>
+          <div class="user-dropdown" id="userDropdown" hidden>
+            <div class="user-dropdown-info">
+              <span class="dropdown-email"></span>
+              <span class="role">Finance Control</span>
+            </div>
+            <button type="button" id="logoutBtn" class="dropdown-logout">
+              <span>➔</span> Đăng xuất
+            </button>
           </div>
         </div>
       </div>
@@ -227,6 +235,32 @@
             <div id="projectBars" class="column-chart"></div>
           </section>
 
+          <!-- Project Management Table Panel -->
+          <section class="panel table-panel" id="projectList" data-views="projects">
+            <div class="panel-header">
+              <h2 data-i18n="panel_projects_list">Project list</h2>
+              <div class="panel-header-actions">
+                <button id="projectAddBtn" type="button" data-i18n="btn_new_project">+ New Project</button>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="th_code">Code</th>
+                    <th data-i18n="th_name">Project name</th>
+                    <th data-i18n="th_owner">Owner</th>
+                    <th data-i18n="th_department">Department</th>
+                    <th data-i18n="th_budget">Budget</th>
+                    <th data-i18n="th_status">Status</th>
+                    <th data-i18n="th_actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="projectRows"></tbody>
+              </table>
+            </div>
+          </section>
+
           <!-- Approval Queue Table Panel -->
           <section class="panel table-panel" id="approvals" data-views="dashboard,approvals">
             <div class="panel-header">
@@ -285,6 +319,51 @@
               </div>
               <button id="saveTelegramBotFather" type="button" class="btn-primary">Save Telegram Setup</button>
             </div>
+
+            <!-- Cau hinh SMTP gui email quen mat khau -->
+            <div class="botfather-panel">
+              <h3>Cấu hình Email (SMTP) - Quên mật khẩu</h3>
+              <p>Dùng để gửi email đặt lại mật khẩu. Gợi ý dùng Gmail: host <code>smtp.gmail.com</code>, port 587,
+                mật khẩu là "Mật khẩu ứng dụng" (App Password) tạo tại myaccount.google.com/apppasswords - không
+                dùng mật khẩu Gmail thường.</p>
+              <div class="botfather-grid">
+                <label>
+                  SMTP Host
+                  <input id="smtpHost" placeholder="smtp.gmail.com" />
+                </label>
+                <label>
+                  SMTP Port
+                  <input id="smtpPort" type="number" placeholder="587" />
+                </label>
+                <label>
+                  Username (email đăng nhập SMTP)
+                  <input id="smtpUsername" placeholder="ban@gmail.com" />
+                </label>
+                <label>
+                  Password (App Password)
+                  <input id="smtpPassword" type="password" autocomplete="off" placeholder="Để trống nếu giữ nguyên" />
+                </label>
+                <label>
+                  Email người gửi (From)
+                  <input id="smtpFromEmail" placeholder="ban@gmail.com" />
+                </label>
+                <label>
+                  Tên người gửi
+                  <input id="smtpFromName" placeholder="INVMMC Finance" />
+                </label>
+              </div>
+              <label class="checkbox-line">
+                <input id="smtpUseTls" type="checkbox" checked />
+                Dùng TLS (khuyến nghị, port 587)
+              </label>
+              <button id="saveSmtpSetup" type="button" class="btn-primary">Lưu cấu hình Email</button>
+              <div class="smtp-test-row">
+                <input id="smtpTestEmail" type="email" placeholder="Nhập email để gửi thử" />
+                <button id="sendTestEmailBtn" type="button">Gửi thử</button>
+              </div>
+              <p id="smtpTestResult" class="smtp-test-result"></p>
+            </div>
+
             <div id="integrationList" class="integration-list"></div>
           </section>
 
@@ -327,6 +406,13 @@
                 </label>
               </div>
               <p id="rangeLabel" hidden></p>
+              <label>
+                <span data-i18n="lbl_export_lang">Xuất bằng ngôn ngữ</span>
+                <select id="exportLang">
+                  <option value="vi" data-i18n="opt_lang_vi">Tiếng Việt</option>
+                  <option value="en" data-i18n="opt_lang_en">English</option>
+                </select>
+              </label>
               <button id="exportReportBtn" class="export-button" type="button" data-i18n="btn_export">
                 Export CSV
               </button>
@@ -357,6 +443,10 @@
               </div>
               <select id="transferExportProject" aria-label="Export project filter">
                 <option value="" data-i18n="opt_all_projects">All Projects</option>
+              </select>
+              <select id="transferExportLang" aria-label="Export language">
+                <option value="vi" data-i18n="opt_lang_vi">Tiếng Việt</option>
+                <option value="en" data-i18n="opt_lang_en">English</option>
               </select>
               <button id="transferExportBtn" class="export-button" type="button" data-i18n="btn_export_transfers">
                 Export Report
@@ -459,34 +549,44 @@
     </div>
   </div>
 
-  <!-- Dialog for Project Creation -->
+  <!-- Dialog for Project Create & Edit -->
   <dialog id="projectDialog">
-    <form id="projectForm" method="dialog">
+    <form id="projectForm" class="dialog-form" method="dialog">
       <div class="dialog-header">
-        <h2>New Project</h2>
+        <h2 id="projectDialogTitle">Dự án</h2>
         <button type="button" id="closeProjectDialog" title="Close">×</button>
       </div>
-      <label>
-        Code
-        <input name="code" required placeholder="PRJ004" />
-      </label>
-      <label>
-        Name
-        <input name="name" required placeholder="New finance initiative" />
-      </label>
-      <label>
-        Owner
-        <input name="owner" required placeholder="Project owner" />
-      </label>
-      <label>
-        Department
-        <input name="department" required placeholder="Finance" />
-      </label>
-      <label>
-        Budget VND
-        <input name="budget_amount" type="number" min="1" required placeholder="100000000" />
-      </label>
-      <button type="submit">Create</button>
+      <input type="hidden" name="id" />
+      <div class="form-grid">
+        <label>
+          Mã dự án
+          <input name="code" required placeholder="PRJ004" />
+        </label>
+        <label>
+          Ngân sách (VND)
+          <input name="budget_amount" type="number" min="1" required placeholder="100000000" />
+        </label>
+        <label class="full">
+          Tên dự án
+          <input name="name" required placeholder="Chiến dịch marketing Q3" />
+        </label>
+        <label>
+          Chủ nhiệm
+          <input name="owner" required placeholder="Nguyễn Văn A" />
+        </label>
+        <label>
+          Phòng ban
+          <input name="department" required placeholder="Tài chính" />
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" id="projectSaveBtn" data-status="pending_approval" class="secondary">
+          Lưu (chờ duyệt)
+        </button>
+        <button type="submit" id="projectApproveBtn" data-status="active" class="confirm">
+          Lưu &amp; Duyệt
+        </button>
+      </div>
     </form>
   </dialog>
 
@@ -635,7 +735,7 @@
     </form>
   </dialog>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=4"></script>
 </body>
 
 </html>

@@ -1,6 +1,7 @@
 """Xuat bao cao Excel (.xlsx) co dinh dang: tieu de, header mau, ke bang,
 so tien phan cach hang nghin, THU xanh / CHI do, dong tong cong.
 
+Ho tro xuat song ngu Viet/Anh qua tham so lang="vi"|"en" (TEXT bang duoi).
 CSV van giu lai qua tham so fmt=csv cho nhu cau xu ly may.
 """
 
@@ -16,9 +17,10 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 from PIL import Image as PilImage
 
-# Kich thuoc thumbnail anh chung tu nhung vao Excel (pixel).
-THUMB_MAX_WIDTH = 110
-THUMB_MAX_HEIGHT = 140
+# Kich thuoc thumbnail anh chung tu nhung vao Excel (pixel). Du lon de doc duoc
+# so tien/ma GD tren anh chup man hinh ngan hang, khong qua lon lam nang file.
+THUMB_MAX_WIDTH = 260
+THUMB_MAX_HEIGHT = 340
 
 HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
 HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
@@ -36,12 +38,103 @@ CENTER = Alignment(horizontal="center", vertical="center", wrap_text=False)
 LEFT = Alignment(horizontal="left", vertical="center")
 RIGHT = Alignment(horizontal="right", vertical="center")
 
-REVIEW_LABELS = {
-    "pending_ai": "Cho AI",
-    "pending_review": "Cho duyet",
-    "confirmed": "Da xac nhan",
-    "duplicate": "Nghi trung",
+# Tat ca chuoi hien thi song ngu tap trung o day - de them ngon ngu khac sau nay.
+TEXT: dict[str, dict[str, str]] = {
+    "vi": {
+        "project_title": "BAO CAO TONG HOP DU AN",
+        "project_sheet": "Tong hop du an",
+        "transfer_title": "BAO CAO CHI TIET GIAO DICH THU/CHI",
+        "transfer_sheet": "Chi tiet giao dich",
+        "exported_at": "Xuat luc",
+        "report_period": "Ky bao cao",
+        "total": "TONG CONG",
+        "total_thu": "TONG THU (da xac nhan)",
+        "total_chi": "TONG CHI (da xac nhan)",
+        "net": "CHENH LECH (THU - CHI)",
+        "type_thu": "THU",
+        "type_chi": "CHI",
+        "type_unknown": "?",
+        "no_image": "-",
+    },
+    "en": {
+        "project_title": "PROJECT SUMMARY REPORT",
+        "project_sheet": "Project Summary",
+        "transfer_title": "TRANSACTION DETAIL REPORT (INCOME/EXPENSE)",
+        "transfer_sheet": "Transaction Detail",
+        "exported_at": "Exported at",
+        "report_period": "Report period",
+        "total": "TOTAL",
+        "total_thu": "TOTAL INCOME (confirmed)",
+        "total_chi": "TOTAL EXPENSE (confirmed)",
+        "net": "NET (INCOME - EXPENSE)",
+        "type_thu": "INCOME",
+        "type_chi": "EXPENSE",
+        "type_unknown": "?",
+        "no_image": "-",
+    },
 }
+
+PROJECT_HEADERS: dict[str, list[str]] = {
+    "vi": [
+        "Ma DA", "Ten du an", "Chu nhiem", "Phong ban",
+        "Ngan sach (VND)", "Chi thuc te (VND)", "THU Telegram (VND)",
+        "CHI Telegram (VND)", "Con lai (VND)", "% Su dung", "Trang thai",
+    ],
+    "en": [
+        "Code", "Project Name", "Owner", "Department",
+        "Budget (VND)", "Actual (VND)", "Telegram Income (VND)",
+        "Telegram Expense (VND)", "Remaining (VND)", "% Used", "Status",
+    ],
+}
+
+TRANSFER_HEADERS: dict[str, list[str]] = {
+    "vi": [
+        "Ngay nhan", "Thoi gian GD", "Du an", "Nguon", "Loai",
+        "So tien (VND)", "Doi tac", "Ngan hang", "Ma GD / Noi dung CK",
+        "Duyet", "Ghi chu", "Anh chung tu",
+    ],
+    "en": [
+        "Received", "Transaction Time", "Project", "Source", "Type",
+        "Amount (VND)", "Counterparty", "Bank", "Ref / Description",
+        "Review", "Note", "Receipt Image",
+    ],
+}
+
+REVIEW_LABELS: dict[str, dict[str, str]] = {
+    "vi": {
+        "pending_ai": "Cho AI",
+        "pending_review": "Cho duyet",
+        "confirmed": "Da xac nhan",
+        "duplicate": "Nghi trung",
+    },
+    "en": {
+        "pending_ai": "AI Processing",
+        "pending_review": "Pending Review",
+        "confirmed": "Confirmed",
+        "duplicate": "Possible Duplicate",
+    },
+}
+
+PERIOD_NAMES: dict[str, dict[str, str]] = {
+    "vi": {
+        "day": "Hom nay",
+        "week": "Tuan nay",
+        "month": "Thang nay",
+        "year": "Nam nay",
+        "custom": "Khoang tuy chon",
+    },
+    "en": {
+        "day": "Today",
+        "week": "This week",
+        "month": "This month",
+        "year": "This year",
+        "custom": "Custom range",
+    },
+}
+
+
+def _lang(lang: str) -> str:
+    return lang if lang in TEXT else "vi"
 
 
 def _init_sheet(
@@ -50,6 +143,7 @@ def _init_sheet(
     period_label: str,
     headers: list[str],
     widths: list[int],
+    lang: str,
 ) -> int:
     """Ghi tieu de + ky bao cao + header; tra ve chi so dong du lieu dau tien."""
     last_col = get_column_letter(len(headers))
@@ -63,7 +157,7 @@ def _init_sheet(
 
     ws.merge_cells(f"A2:{last_col}2")
     sub_cell = ws["A2"]
-    sub_cell.value = f"{period_label}  |  Xuat luc {datetime.now():%d/%m/%Y %H:%M}"
+    sub_cell.value = f"{period_label}  |  {TEXT[lang]['exported_at']} {datetime.now():%d/%m/%Y %H:%M}"
     sub_cell.font = SUB_FONT
     sub_cell.alignment = CENTER
 
@@ -88,34 +182,37 @@ def _style_data_cell(cell, stripe: bool) -> None:
 
 
 def _receipt_thumbnail(file_path: str) -> tuple[BytesIO, int, int] | None:
-    """Thu nho anh chung tu de nhung vao o Excel; hong/thieu file thi bo qua."""
+    """Thu nho anh chung tu de nhung vao o Excel; hong/thieu file thi bo qua.
+
+    Dung PNG (khong mat du lieu) thay vi JPEG nen manh - anh chup man hinh
+    ngan hang la dang UI/chu nen JPEG de bi rang/mo chu so, PNG giu net hon
+    va nen tot voi anh nhieu mang mau phang kieu nay.
+    """
     try:
         path = Path(file_path)
         if not path.exists():
             return None
         with PilImage.open(path) as img:
             img = img.convert("RGB")
-            img.thumbnail((THUMB_MAX_WIDTH, THUMB_MAX_HEIGHT))
+            img.thumbnail((THUMB_MAX_WIDTH, THUMB_MAX_HEIGHT), PilImage.LANCZOS)
             buffer = BytesIO()
-            img.save(buffer, format="JPEG", quality=70)
+            img.save(buffer, format="PNG", optimize=True)
             buffer.seek(0)
             return buffer, img.width, img.height
     except Exception:
         return None
 
 
-def build_project_report_xlsx(rows: list[dict], period_label: str) -> bytes:
+def build_project_report_xlsx(rows: list[dict], period_label: str, lang: str = "vi") -> bytes:
+    lang = _lang(lang)
+    text = TEXT[lang]
     wb = Workbook()
     ws = wb.active
-    ws.title = "Tong hop du an"
+    ws.title = text["project_sheet"]
 
-    headers = [
-        "Ma DA", "Ten du an", "Chu nhiem", "Phong ban",
-        "Ngan sach (VND)", "Chi thuc te (VND)", "THU Telegram (VND)",
-        "CHI Telegram (VND)", "Con lai (VND)", "% Su dung", "Trang thai",
-    ]
+    headers = PROJECT_HEADERS[lang]
     widths = [10, 30, 18, 15, 17, 17, 17, 17, 17, 11, 12]
-    row_index = _init_sheet(ws, "BAO CAO TONG HOP DU AN", period_label, headers, widths)
+    row_index = _init_sheet(ws, text["project_title"], period_label, headers, widths, lang)
 
     money_columns = {5, 6, 7, 8, 9}
     for order, row in enumerate(rows):
@@ -150,7 +247,7 @@ def build_project_report_xlsx(rows: list[dict], period_label: str) -> bytes:
 
     if rows:
         ws.merge_cells(start_row=row_index, start_column=1, end_row=row_index, end_column=4)
-        label_cell = ws.cell(row=row_index, column=1, value="TONG CONG")
+        label_cell = ws.cell(row=row_index, column=1, value=text["total"])
         for col in range(1, len(headers) + 1):
             cell = ws.cell(row=row_index, column=col)
             cell.fill = TOTAL_FILL
@@ -167,19 +264,18 @@ def build_project_report_xlsx(rows: list[dict], period_label: str) -> bytes:
     return buffer.getvalue()
 
 
-def build_transfer_report_xlsx(rows: list[dict], period_label: str) -> bytes:
+def build_transfer_report_xlsx(rows: list[dict], period_label: str, lang: str = "vi") -> bytes:
+    lang = _lang(lang)
+    text = TEXT[lang]
+    review_labels = REVIEW_LABELS[lang]
     wb = Workbook()
     ws = wb.active
-    ws.title = "Chi tiet giao dich"
+    ws.title = text["transfer_sheet"]
 
-    headers = [
-        "Ngay nhan", "Thoi gian GD", "Du an", "Nguon", "Loai",
-        "So tien (VND)", "Doi tac", "Ngan hang", "Ma GD / Noi dung CK",
-        "Duyet", "Ghi chu", "Anh chung tu",
-    ]
-    widths = [17, 17, 10, 11, 8, 15, 24, 18, 28, 13, 20, 17]
+    headers = TRANSFER_HEADERS[lang]
+    widths = [17, 17, 10, 11, 8, 15, 24, 18, 28, 13, 20, 39]
     image_column = len(headers)
-    row_index = _init_sheet(ws, "BAO CAO CHI TIET GIAO DICH THU/CHI", period_label, headers, widths)
+    row_index = _init_sheet(ws, text["transfer_title"], period_label, headers, widths, lang)
 
     total_thu = Decimal("0")
     total_chi = Decimal("0")
@@ -192,7 +288,7 @@ def build_transfer_report_xlsx(rows: list[dict], period_label: str) -> bytes:
             received = str(received)
 
         transaction_type = row.get("transaction_type", "")
-        type_label = {"thu": "THU", "chi": "CHI"}.get(transaction_type, "?")
+        type_label = {"thu": text["type_thu"], "chi": text["type_chi"]}.get(transaction_type, text["type_unknown"])
         amount = row.get("amount", "")
         confirmed = row.get("review_status") == "confirmed"
         if confirmed and isinstance(amount, (int, float)):
@@ -212,18 +308,18 @@ def build_transfer_report_xlsx(rows: list[dict], period_label: str) -> bytes:
             row.get("counterparty", ""),
             row.get("bank_name", ""),
             row.get("reference", ""),
-            REVIEW_LABELS.get(row.get("review_status", ""), row.get("review_status", "")),
+            review_labels.get(row.get("review_status", ""), row.get("review_status", "")),
             row.get("note", "") or row.get("caption", ""),
-            "" if thumbnail else "-",
+            "" if thumbnail else text["no_image"],
         ]
         for col, value in enumerate(values, start=1):
             cell = ws.cell(row=row_index, column=col, value=value)
             _style_data_cell(cell, stripe)
             if col == 5:
                 cell.alignment = CENTER
-                if type_label == "THU":
+                if transaction_type == "thu":
                     cell.font = THU_FONT
-                elif type_label == "CHI":
+                elif transaction_type == "chi":
                     cell.font = CHI_FONT
             elif col == 6:
                 cell.number_format = MONEY_FORMAT
@@ -245,9 +341,9 @@ def build_transfer_report_xlsx(rows: list[dict], period_label: str) -> bytes:
         row_index += 1
 
     summary = [
-        ("TONG THU (da xac nhan)", total_thu, THU_FONT),
-        ("TONG CHI (da xac nhan)", total_chi, CHI_FONT),
-        ("CHENH LECH (THU - CHI)", total_thu - total_chi, TOTAL_FONT),
+        (text["total_thu"], total_thu, THU_FONT),
+        (text["total_chi"], total_chi, CHI_FONT),
+        (text["net"], total_thu - total_chi, TOTAL_FONT),
     ]
     for label, value, font in summary:
         ws.merge_cells(start_row=row_index, start_column=1, end_row=row_index, end_column=5)
@@ -269,14 +365,23 @@ def build_transfer_report_xlsx(rows: list[dict], period_label: str) -> bytes:
     return buffer.getvalue()
 
 
-def period_display_label(period: str, start: datetime, end: datetime) -> str:
-    names = {
-        "day": "Hom nay",
-        "week": "Tuan nay",
-        "month": "Thang nay",
-        "year": "Nam nay",
-        "custom": "Khoang tuy chon",
-    }
+def period_display_label(period: str, start: datetime, end: datetime, lang: str = "vi") -> str:
+    lang = _lang(lang)
+    names = PERIOD_NAMES[lang]
     # end la can mo (exclusive) nen ngay cuoi cung trong ky la end - 1 ngay.
     display_end = end - timedelta(days=1)
-    return f"Ky bao cao: {names.get(period, period)} ({start:%d/%m/%Y} - {display_end:%d/%m/%Y})"
+    period_name = names.get(period, period)
+    return f"{TEXT[lang]['report_period']}: {period_name} ({start:%d/%m/%Y} - {display_end:%d/%m/%Y})"
+
+
+def project_scoped_label(
+    project_name: str, project_code: str, start: datetime, end: datetime, lang: str = "vi"
+) -> str:
+    """Dong tieu de khi bao cao duoc loc theo 1 du an cu the - hien ten du an
+    thay vi ten ky han chung chung, de nguoi mo file biet ngay day la bao cao
+    cua du an nao."""
+    lang = _lang(lang)
+    display_end = end - timedelta(days=1)
+    prefix = "Du an" if lang == "vi" else "Project"
+    from_word = "Tu" if lang == "vi" else "From"
+    return f"{prefix}: {project_name} ({project_code})  |  {from_word} {start:%d/%m/%Y} - {display_end:%d/%m/%Y}"

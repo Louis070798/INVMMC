@@ -1,0 +1,15 @@
+[Unit]
+Description=INVMMC FastAPI backend
+After=network.target
+
+[Service]
+Type=simple
+User=invmmc
+WorkingDirectory=/opt/invmmc/01-INVMMC
+EnvironmentFile=/opt/invmmc/01-INVMMC/.env
+ExecStart=/opt/invmmc/01-INVMMC/.venv/bin/python -m uvicorn invmmc.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=INVMMC Telegram long-polling bridge (khong dung webhook)
+After=network.target invmmc-api.service
+Requires=invmmc-api.service
+
+[Service]
+Type=simple
+User=invmmc
+WorkingDirectory=/opt/invmmc/01-INVMMC
+ExecStart=/opt/invmmc/01-INVMMC/.venv/bin/python -u scripts/telegram_polling.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

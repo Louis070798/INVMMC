@@ -2,6 +2,8 @@ import csv
 import hashlib
 import io
 import json
+import re
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
@@ -31,14 +33,18 @@ from invmmc.api.schemas import (
     AttachmentUpdateRequest,
     AuthUserResponse,
     TelegramBotTokenRequest,
+    EmailTestRequest,
     ExpenseCreateRequest,
     ExpenseCreateResponse,
+    ForgotPasswordRequest,
     HealthResponse,
     IntegrationResponse,
     IntegrationUpdateRequest,
     LoginRequest,
     ProjectCreateRequest,
     ProjectResponse,
+    ProjectUpdateRequest,
+    ResetPasswordRequest,
 )
 from invmmc.core.config import settings
 from invmmc.core.database import get_db
@@ -54,6 +60,11 @@ from invmmc.integrations.telegram import (
     intake_note_keyboard,
 )
 from invmmc.core.imaging import dhash_hex
+from invmmc.integrations.email_sender import (
+    build_reset_password_email,
+    effective_smtp_config,
+    send_email,
+)
 from invmmc.persistence.models import (
     ExpenseRequestModel,
     IntegrationConfigModel,
@@ -68,11 +79,14 @@ from invmmc.services.auth import (
     SESSION_COOKIE_NAME,
     AuthUser,
     authenticate_user,
+    consume_password_reset_token,
+    create_password_reset_token,
     create_session,
     get_current_user,
     hash_password,
     optional_current_user,
     require_roles,
+    revoke_all_sessions,
     revoke_session,
     roles_to_json,
 )
@@ -90,6 +104,7 @@ from invmmc.services.report_export import (
     build_project_report_xlsx,
     build_transfer_report_xlsx,
     period_display_label,
+    project_scoped_label,
 )
 from invmmc.services.reporting import (
     attachment_dict,
@@ -125,6 +140,16 @@ async def dashboard(user: AuthUser | None = Depends(optional_current_user)):
     if not user:
         return RedirectResponse(url="/login")
     return FileResponse(Path(__file__).resolve().parents[1] / "static" / "dashboard.html")
+
+
+@router.get("/forgot-password", include_in_schema=False)
+async def forgot_password_page() -> FileResponse:
+    return FileResponse(Path(__file__).resolve().parents[1] / "static" / "forgot-password.html")
+
+
+@router.get("/reset-password", include_in_schema=False)
+async def reset_password_page() -> FileResponse:
+    return FileResponse(Path(__file__).resolve().parents[1] / "static" / "reset-password.html")
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -169,6 +194,44 @@ async def me(user: AuthUser = Depends(get_current_user)) -> AuthUserResponse:
         full_name=user.full_name,
         roles=sorted(role.value for role in user.roles),
     )
+
+
+@router.post("/api/v1/auth/forgot-password")
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    # Luon tra ve cung 1 thong bao du email co ton tai hay khong - tranh lo
+    # danh sach email da dang ky (user enumeration).
+    generic_response = {"status": "if_account_exists_email_sent"}
+
+    user = db.scalar(select(UserModel).where(UserModel.email == payload.email.lower().strip()))
+    if not user or user.status != "active":
+        return generic_response
+
+    token = create_password_reset_token(db, user)
+    reset_link = f"{settings.app_base_url}/reset-password?token={token}"
+    subject, body = build_reset_password_email(reset_link)
+    background_tasks.add_task(send_email, user.email, subject, body)
+    return generic_response
+
+
+@router.post("/api/v1/auth/reset-password")
+async def reset_password(
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    user = consume_password_reset_token(db, payload.token)
+    if not user:
+        raise HTTPException(status_code=400, detail="invalid_or_expired_token")
+
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    # Reset mat khau xong thi dang xuat het cac phien dang dang nhap (bao gom
+    # ke ca ke gian doan neu tai khoan bi lo mat khau).
+    revoke_all_sessions(db, user.id)
+    return {"status": "password_updated"}
 
 
 # ---------------------------------------------------------------- bot ca nhan
@@ -313,24 +376,28 @@ async def get_dashboard_summary(
     return dashboard_summary(db, period, project_id)
 
 
+PROJECT_STATUSES = {"pending_approval", "active"}
+
+
+def _project_response(project: ProjectModel) -> ProjectResponse:
+    return ProjectResponse(
+        id=project.id,
+        code=project.code,
+        name=project.name,
+        owner=project.owner,
+        department=project.department,
+        budget_amount=project.budget_amount,
+        status=project.status,
+    )
+
+
 @router.get("/api/v1/projects", response_model=list[ProjectResponse])
 async def list_projects(
     db: Session = Depends(get_db),
     user: AuthUser = Depends(require_roles(*FINANCE_READ_ROLES)),
 ) -> list[ProjectResponse]:
     projects = db.scalars(select(ProjectModel).order_by(ProjectModel.code)).all()
-    return [
-        ProjectResponse(
-            id=project.id,
-            code=project.code,
-            name=project.name,
-            owner=project.owner,
-            department=project.department,
-            budget_amount=project.budget_amount,
-            status=project.status,
-        )
-        for project in projects
-    ]
+    return [_project_response(project) for project in projects]
 
 
 @router.post("/api/v1/projects", response_model=ProjectResponse)
@@ -350,19 +417,84 @@ async def create_project(
         owner=payload.owner,
         department=payload.department,
         budget_amount=payload.budget_amount,
+        # Tao tu dashboard thi cho duyet; nut "Luu & Duyet" se PATCH sang active ngay sau do.
+        status="pending_approval",
     )
     db.add(project)
     db.commit()
     db.refresh(project)
-    return ProjectResponse(
-        id=project.id,
-        code=project.code,
-        name=project.name,
-        owner=project.owner,
-        department=project.department,
-        budget_amount=project.budget_amount,
-        status=project.status,
+    return _project_response(project)
+
+
+@router.patch("/api/v1/projects/{project_id}", response_model=ProjectResponse)
+async def update_project(
+    project_id: str,
+    payload: ProjectUpdateRequest,
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(require_roles(*FINANCE_WRITE_ROLES)),
+) -> ProjectResponse:
+    project = db.get(ProjectModel, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="project_not_found")
+
+    if payload.code is not None:
+        code = payload.code.strip().upper()
+        other = db.scalar(
+            select(ProjectModel).where(ProjectModel.code == code, ProjectModel.id != project.id)
+        )
+        if other:
+            raise HTTPException(status_code=409, detail="project_code_exists")
+        project.code = code
+    if payload.name is not None:
+        project.name = payload.name.strip()[:200]
+    if payload.owner is not None:
+        project.owner = payload.owner.strip()[:120]
+    if payload.department is not None:
+        project.department = payload.department.strip()[:120]
+    if payload.budget_amount is not None:
+        project.budget_amount = payload.budget_amount
+    if payload.status is not None:
+        if payload.status not in PROJECT_STATUSES:
+            raise HTTPException(status_code=400, detail="invalid_status")
+        project.status = payload.status
+
+    db.commit()
+    db.refresh(project)
+    return _project_response(project)
+
+
+@router.delete("/api/v1/projects/{project_id}")
+async def delete_project(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(require_roles(*FINANCE_WRITE_ROLES)),
+) -> dict[str, str]:
+    project = db.get(ProjectModel, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="project_not_found")
+
+    expense_count = len(
+        db.scalars(
+            select(ExpenseRequestModel.id).where(ExpenseRequestModel.project_id == project.id)
+        ).all()
     )
+    attachment_count = len(
+        db.scalars(
+            select(TransferAttachmentModel.id).where(
+                TransferAttachmentModel.project_id == project.id
+            )
+        ).all()
+    )
+    if expense_count or attachment_count:
+        # Con du lieu tham chieu thi khong xoa duoc - tranh mo coi chung tu/de nghi chi.
+        raise HTTPException(
+            status_code=409,
+            detail=f"project_has_data:expenses={expense_count},attachments={attachment_count}",
+        )
+
+    db.delete(project)
+    db.commit()
+    return {"status": "deleted", "id": project_id}
 
 
 @router.post("/api/v1/expenses", response_model=ExpenseCreateResponse)
@@ -620,6 +752,24 @@ async def update_integration(
     )
 
 
+@router.post("/api/v1/integrations/email/test")
+async def send_test_email(
+    payload: EmailTestRequest,
+    user: AuthUser = Depends(require_roles(*CONFIG_ROLES)),
+) -> dict[str, str]:
+    if not effective_smtp_config()["smtp_host"]:
+        raise HTTPException(status_code=400, detail="smtp_not_configured")
+    try:
+        send_email(
+            payload.to_email,
+            "Email thu nghiem INVMMC Finance",
+            "Day la email thu nghiem cau hinh SMTP. Neu ban nhan duoc email nay, cau hinh da hoat dong dung.",
+        )
+    except Exception as error:  # smtplib co the nem nhieu loai loi khac nhau
+        raise HTTPException(status_code=400, detail=f"send_failed: {error}") from error
+    return {"status": "sent"}
+
+
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
@@ -629,6 +779,11 @@ def _export_file_name(prefix: str, period: str, start_date: str | None, end_date
     return f"{prefix}-{period}.{ext}"
 
 
+def _slugify_code(code: str) -> str:
+    """Loc ky tu khong an toan cho ten file (ma du an khong bi rang buoc ky tu)."""
+    return re.sub(r"[^A-Za-z0-9_-]", "_", code)
+
+
 @router.get("/api/v1/reports/export")
 async def export_report(
     period: str = Query(default="month", pattern="^(day|week|month|year|custom)$"),
@@ -636,6 +791,7 @@ async def export_report(
     end_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     project_id: str | None = None,
     fmt: str = Query(default="xlsx", pattern="^(xlsx|csv)$"),
+    lang: str = Query(default="vi", pattern="^(vi|en)$"),
     db: Session = Depends(get_db),
     user: AuthUser = Depends(require_roles(*FINANCE_READ_ROLES)),
 ) -> StreamingResponse:
@@ -645,9 +801,20 @@ async def export_report(
         raise HTTPException(status_code=422, detail=str(error)) from error
     rows = project_report_rows(db, "month", project_id, start=start, end=end)
 
+    project = db.get(ProjectModel, project_id) if project_id else None
+
     if fmt == "xlsx":
-        content = build_project_report_xlsx(rows, period_display_label(period, start, end))
-        file_name = _export_file_name("invmmc-bao-cao-du-an", period, start_date, end_date, "xlsx")
+        if project:
+            label = project_scoped_label(project.name, project.code, start, end, lang)
+            base_prefix = "invmmc-project-report" if lang == "en" else "invmmc-bao-cao-du-an"
+            prefix = f"{base_prefix}-{_slugify_code(project.code)}"
+            display_end = end - timedelta(days=1)
+            file_name = f"{prefix}-{start:%Y-%m-%d}-to-{display_end:%Y-%m-%d}.xlsx"
+        else:
+            label = period_display_label(period, start, end, lang)
+            prefix = "invmmc-project-report" if lang == "en" else "invmmc-bao-cao-du-an"
+            file_name = _export_file_name(prefix, period, start_date, end_date, "xlsx")
+        content = build_project_report_xlsx(rows, label, lang)
         return StreamingResponse(
             iter([content]),
             media_type=XLSX_MEDIA_TYPE,
@@ -690,6 +857,7 @@ async def export_transfers(
     end_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     project_id: str | None = None,
     fmt: str = Query(default="xlsx", pattern="^(xlsx|csv)$"),
+    lang: str = Query(default="vi", pattern="^(vi|en)$"),
     db: Session = Depends(get_db),
     user: AuthUser = Depends(require_roles(*FINANCE_READ_ROLES)),
 ) -> StreamingResponse:
@@ -699,9 +867,20 @@ async def export_transfers(
         raise HTTPException(status_code=422, detail=str(error)) from error
     rows = transfer_report_rows(db, start, end, project_id)
 
+    project = db.get(ProjectModel, project_id) if project_id else None
+
     if fmt == "xlsx":
-        content = build_transfer_report_xlsx(rows, period_display_label(period, start, end))
-        file_name = _export_file_name("invmmc-giao-dich", period, start_date, end_date, "xlsx")
+        if project:
+            label = project_scoped_label(project.name, project.code, start, end, lang)
+            base_prefix = "invmmc-transactions" if lang == "en" else "invmmc-giao-dich"
+            prefix = f"{base_prefix}-{_slugify_code(project.code)}"
+            display_end = end - timedelta(days=1)
+            file_name = f"{prefix}-{start:%Y-%m-%d}-to-{display_end:%Y-%m-%d}.xlsx"
+        else:
+            label = period_display_label(period, start, end, lang)
+            prefix = "invmmc-transactions" if lang == "en" else "invmmc-giao-dich"
+            file_name = _export_file_name(prefix, period, start_date, end_date, "xlsx")
+        content = build_transfer_report_xlsx(rows, label, lang)
         return StreamingResponse(
             iter([content]),
             media_type=XLSX_MEDIA_TYPE,

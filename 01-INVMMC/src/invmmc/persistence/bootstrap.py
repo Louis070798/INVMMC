@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -255,6 +256,24 @@ def ensure_default_integrations(db: Session) -> None:
             enabled=False,
             status="needs_contract",
             config_json='{"mode": "sandbox"}',
+        ),
+        IntegrationConfigModel(
+            key="email",
+            provider="smtp",
+            display_name="Email (SMTP - Quen mat khau)",
+            enabled=False,
+            status="needs_smtp_config",
+            config_json=json.dumps(
+                {
+                    "smtp_host": "",
+                    "smtp_port": 587,
+                    "smtp_username": "",
+                    "smtp_password": "",
+                    "smtp_from_email": "",
+                    "smtp_from_name": "INVMMC Finance",
+                    "smtp_use_tls": True,
+                }
+            ),
         ),
     ]
 

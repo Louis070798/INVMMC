@@ -37,6 +37,7 @@ const els = {
   periodSelect: document.querySelector("#periodSelect"),
   projectSelect: document.querySelector("#projectSelect"),
   exportProject: document.querySelector("#exportProject"),
+  exportLang: document.querySelector("#exportLang"),
   refreshBtn: document.querySelector("#refreshBtn"),
   periodLabel: document.querySelector("#periodLabel"),
   rangeLabel: document.querySelector("#rangeLabel"),
@@ -66,6 +67,8 @@ const els = {
   saveState: document.querySelector("#saveState"),
   projectDialog: document.querySelector("#projectDialog"),
   projectForm: document.querySelector("#projectForm"),
+  projectDialogTitle: document.querySelector("#projectDialogTitle"),
+  projectRows: document.querySelector("#projectRows"),
   footerProjects: document.querySelector("#footerProjects"),
   footerBudget: document.querySelector("#footerBudget"),
   footerActual: document.querySelector("#footerActual"),
@@ -80,11 +83,23 @@ const els = {
   telegramWebhookUrl: document.querySelector("#telegramWebhookUrl"),
   telegramTokenStatus: document.querySelector("#telegramTokenStatus"),
   saveTelegramBotFather: document.querySelector("#saveTelegramBotFather"),
+  smtpHost: document.querySelector("#smtpHost"),
+  smtpPort: document.querySelector("#smtpPort"),
+  smtpUsername: document.querySelector("#smtpUsername"),
+  smtpPassword: document.querySelector("#smtpPassword"),
+  smtpFromEmail: document.querySelector("#smtpFromEmail"),
+  smtpFromName: document.querySelector("#smtpFromName"),
+  smtpUseTls: document.querySelector("#smtpUseTls"),
+  saveSmtpSetup: document.querySelector("#saveSmtpSetup"),
+  smtpTestEmail: document.querySelector("#smtpTestEmail"),
+  sendTestEmailBtn: document.querySelector("#sendTestEmailBtn"),
+  smtpTestResult: document.querySelector("#smtpTestResult"),
   transferExportPeriod: document.querySelector("#transferExportPeriod"),
   transferExportRange: document.querySelector("#transferExportRange"),
   transferExportStart: document.querySelector("#transferExportStart"),
   transferExportEnd: document.querySelector("#transferExportEnd"),
   transferExportProject: document.querySelector("#transferExportProject"),
+  transferExportLang: document.querySelector("#transferExportLang"),
   transferExportBtn: document.querySelector("#transferExportBtn"),
 };
 
@@ -159,12 +174,14 @@ async function loadProjects() {
   els.projectSelect.value = current;
   els.exportProject.value = exportCurrent;
   els.transferExportProject.value = transferExportCurrent;
+  renderProjectRows();
 }
 
 async function loadIntegrations() {
   state.integrations = await api("/api/v1/integrations");
   renderIntegrations();
   hydrateTelegramSetup();
+  hydrateSmtpSetup();
 }
 
 async function loadSummary() {
@@ -373,6 +390,75 @@ async function saveTelegramSetup() {
   }, 1600);
 }
 
+function hydrateSmtpSetup() {
+  const email = state.integrations.find((item) => item.key === "email");
+  if (!email) return;
+  const config = email.config || {};
+  els.smtpHost.value = config.smtp_host || "";
+  els.smtpPort.value = config.smtp_port || 587;
+  els.smtpUsername.value = config.smtp_username || "";
+  // Khong echo lai password that - de trong, chi ghi de neu user go gia tri moi.
+  els.smtpPassword.value = "";
+  els.smtpPassword.placeholder = config.smtp_username
+    ? "•••••••• (để trống nếu giữ nguyên)"
+    : "Để trống nếu giữ nguyên";
+  els.smtpFromEmail.value = config.smtp_from_email || "";
+  els.smtpFromName.value = config.smtp_from_name || "INVMMC Finance";
+  els.smtpUseTls.checked = config.smtp_use_tls !== false;
+}
+
+async function saveSmtpSetup() {
+  const config = {
+    smtp_host: els.smtpHost.value.trim(),
+    smtp_port: Number(els.smtpPort.value) || 587,
+    smtp_username: els.smtpUsername.value.trim(),
+    smtp_from_email: els.smtpFromEmail.value.trim(),
+    smtp_from_name: els.smtpFromName.value.trim() || "INVMMC Finance",
+    smtp_use_tls: els.smtpUseTls.checked,
+  };
+  // Chi gui password neu user thuc su go gia tri moi - tranh ghi de rong.
+  if (els.smtpPassword.value.trim()) {
+    config.smtp_password = els.smtpPassword.value.trim();
+  }
+  await api("/api/v1/integrations/email", {
+    method: "PATCH",
+    body: JSON.stringify({ config }),
+  });
+  els.saveState.textContent = "Đã lưu cấu hình Email";
+  await loadIntegrations();
+  setTimeout(() => {
+    els.saveState.textContent = "";
+  }, 1600);
+}
+
+async function sendTestEmail() {
+  const toEmail = els.smtpTestEmail.value.trim();
+  if (!toEmail) {
+    els.smtpTestResult.textContent = "Nhập email nhận thử trước đã.";
+    els.smtpTestResult.className = "smtp-test-result error";
+    return;
+  }
+  els.sendTestEmailBtn.disabled = true;
+  els.smtpTestResult.textContent = "Đang gửi...";
+  els.smtpTestResult.className = "smtp-test-result";
+  try {
+    await api("/api/v1/integrations/email/test", {
+      method: "POST",
+      body: JSON.stringify({ to_email: toEmail }),
+    });
+    els.smtpTestResult.textContent = `Đã gửi thành công tới ${toEmail}. Kiểm tra hộp thư (kể cả spam).`;
+    els.smtpTestResult.className = "smtp-test-result success";
+  } catch (error) {
+    const message = error.message.includes("smtp_not_configured")
+      ? "Chưa lưu cấu hình SMTP (Host/Username) - điền và bấm Lưu cấu hình Email trước."
+      : `Gửi thất bại: ${error.message}`;
+    els.smtpTestResult.textContent = message;
+    els.smtpTestResult.className = "smtp-test-result error";
+  } finally {
+    els.sendTestEmailBtn.disabled = false;
+  }
+}
+
 function renderFooter(kpis, committed, projectCount, transferValue) {
   if (state.lang === "vi") {
     els.footerProjects.textContent = `Dự án: ${projectCount}`;
@@ -487,22 +573,145 @@ async function saveIntegration(key) {
   }, 1500);
 }
 
-async function createProject(event) {
-  event.preventDefault();
-  const formData = new FormData(els.projectForm);
-  await api("/api/v1/projects", {
-    method: "POST",
-    body: JSON.stringify({
-      code: formData.get("code"),
-      name: formData.get("name"),
-      owner: formData.get("owner"),
-      department: formData.get("department"),
-      budget_amount: Number(formData.get("budget_amount")),
-    }),
-  });
-  els.projectDialog.close();
+// ---- Project (du an) CRUD + duyet ----
+function projectStatusPill(status) {
+  const labels = state.lang === "vi"
+    ? { pending_approval: "Chờ duyệt", active: "Hoạt động" }
+    : { pending_approval: "Pending approval", active: "Active" };
+  const cls = status === "active" ? "ok" : "waiting";
+  return `<span class="status ${cls}">${labels[status] || status}</span>`;
+}
+
+function renderProjectRows() {
+  if (!els.projectRows) return;
+  els.projectRows.innerHTML = "";
+  if (!state.projects.length) {
+    const text = state.lang === "vi" ? "Chưa có dự án nào" : "No projects yet";
+    els.projectRows.innerHTML = `<tr><td colspan="7">${text}</td></tr>`;
+    return;
+  }
+  const approveLabel = state.lang === "vi" ? "Duyệt" : "Approve";
+  const editLabel = state.lang === "vi" ? "Sửa" : "Edit";
+  const deleteLabel = state.lang === "vi" ? "Xóa" : "Delete";
+  for (const project of state.projects) {
+    const approveButton = project.status === "active"
+      ? ""
+      : `<button type="button" class="confirm" data-approve-prj="${project.id}">${approveLabel}</button>`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><strong>${project.code}</strong></td>
+      <td>${project.name}</td>
+      <td>${project.owner}</td>
+      <td>${project.department}</td>
+      <td class="amount">${money.format(Number(project.budget_amount))}</td>
+      <td>${projectStatusPill(project.status)}</td>
+      <td class="row-actions">
+        ${approveButton}
+        <button type="button" data-edit-prj="${project.id}">${editLabel}</button>
+        <button type="button" class="danger" data-del-prj="${project.id}">${deleteLabel}</button>
+      </td>
+    `;
+    els.projectRows.append(tr);
+  }
+}
+
+function projectErrorMessage(raw) {
+  if (raw.includes("project_code_exists")) {
+    return state.lang === "vi" ? "Mã dự án này đã tồn tại — chọn mã khác." : "This project code already exists.";
+  }
+  if (raw.includes("project_has_data")) {
+    return state.lang === "vi"
+      ? "Dự án đã có chứng từ hoặc đề nghị chi nên không thể xóa. Hãy chuyển/xóa dữ liệu đó trước."
+      : "This project already has documents or expense requests, so it cannot be deleted.";
+  }
+  if (raw.includes("project_not_found")) {
+    return state.lang === "vi" ? "Dự án không còn tồn tại." : "Project no longer exists.";
+  }
+  if (raw.includes("invalid_status")) {
+    return state.lang === "vi" ? "Trạng thái dự án không hợp lệ." : "Invalid project status.";
+  }
+  return raw;
+}
+
+function openProjectDialog(item) {
   els.projectForm.reset();
-  await refreshAll();
+  els.projectForm.elements.id.value = item?.id || "";
+  if (item) {
+    els.projectDialogTitle.textContent = state.lang === "vi" ? `Sửa dự án ${item.code}` : `Edit project ${item.code}`;
+    els.projectForm.elements.code.value = item.code;
+    els.projectForm.elements.name.value = item.name;
+    els.projectForm.elements.owner.value = item.owner;
+    els.projectForm.elements.department.value = item.department;
+    els.projectForm.elements.budget_amount.value = Number(item.budget_amount);
+  } else {
+    els.projectDialogTitle.textContent = state.lang === "vi" ? "Tạo dự án" : "New project";
+  }
+  els.projectDialog.showModal();
+}
+
+async function submitProjectForm(event) {
+  event.preventDefault();
+  const id = els.projectForm.elements.id.value;
+  // Nut nao duoc bam quyet dinh trang thai: Luu (cho duyet) hoac Luu & Duyet.
+  const status = event.submitter?.dataset.status || "pending_approval";
+  const fields = {
+    code: els.projectForm.elements.code.value.trim(),
+    name: els.projectForm.elements.name.value.trim(),
+    owner: els.projectForm.elements.owner.value.trim(),
+    department: els.projectForm.elements.department.value.trim(),
+    budget_amount: Number(els.projectForm.elements.budget_amount.value),
+  };
+  try {
+    if (id) {
+      await api(`/api/v1/projects/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ...fields, status }),
+      });
+    } else {
+      const created = await api("/api/v1/projects", { method: "POST", body: JSON.stringify(fields) });
+      // POST luon tao o trang thai cho duyet; duyet ngay thi PATCH tiep.
+      if (status === "active") {
+        await api(`/api/v1/projects/${created.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "active" }),
+        });
+      }
+    }
+    els.projectDialog.close();
+    els.projectForm.reset();
+    await loadProjects();
+    await loadSummary().catch(() => { });
+  } catch (error) {
+    alert(projectErrorMessage(error.message));
+  }
+}
+
+async function approveProject(id) {
+  try {
+    await api(`/api/v1/projects/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "active" }),
+    });
+    await loadProjects();
+    await loadSummary().catch(() => { });
+  } catch (error) {
+    alert(projectErrorMessage(error.message));
+  }
+}
+
+async function deleteProject(id) {
+  const project = state.projects.find((row) => row.id === id);
+  const message = state.lang === "vi"
+    ? `Xóa dự án ${project?.code || id}? Chỉ xóa được khi dự án chưa có chứng từ/đề nghị chi.`
+    : `Delete project ${project?.code || id}? Only possible while it has no documents/expenses.`;
+  if (!confirm(message)) return;
+  try {
+    await api(`/api/v1/projects/${id}`, { method: "DELETE" });
+    await loadProjects();
+    await loadSummary().catch(() => { });
+  } catch (error) {
+    alert(projectErrorMessage(error.message));
+  }
 }
 
 function exportReport() {
@@ -524,6 +733,7 @@ function exportReport() {
   }
   const projectId = els.exportProject.value;
   if (projectId) params.set("project_id", projectId);
+  params.set("lang", els.exportLang.value);
   const reportType = document.querySelector("#exportType").value;
   const base = reportType === "transfers" ? "/api/v1/transfers/export" : "/api/v1/reports/export";
   window.location.href = `${base}?${params.toString()}`;
@@ -549,6 +759,7 @@ function exportTransfers() {
   }
   const projectId = els.transferExportProject.value;
   if (projectId) params.set("project_id", projectId);
+  params.set("lang", els.transferExportLang.value);
   window.location.href = `/api/v1/transfers/export?${params.toString()}`;
 }
 
@@ -589,9 +800,21 @@ async function refreshAll() {
 els.periodSelect.addEventListener("change", loadSummary);
 els.projectSelect.addEventListener("change", loadSummary);
 els.refreshBtn.addEventListener("click", refreshAll);
-document.querySelector("#newProjectBtn").addEventListener("click", () => els.projectDialog.showModal());
+document.querySelector("#newProjectBtn").addEventListener("click", () => openProjectDialog(null));
+document.querySelector("#projectAddBtn")?.addEventListener("click", () => openProjectDialog(null));
 document.querySelector("#closeProjectDialog").addEventListener("click", () => els.projectDialog.close());
-els.projectForm.addEventListener("submit", createProject);
+els.projectForm.addEventListener("submit", submitProjectForm);
+els.projectRows?.addEventListener("click", (event) => {
+  const approveId = event.target.dataset.approvePrj;
+  const editId = event.target.dataset.editPrj;
+  const deleteId = event.target.dataset.delPrj;
+  if (approveId) approveProject(approveId);
+  if (editId) {
+    const item = state.projects.find((row) => row.id === editId);
+    if (item) openProjectDialog(item);
+  }
+  if (deleteId) deleteProject(deleteId);
+});
 state.exportPeriod = "month";
 document.querySelectorAll("#exportPeriodButtons [data-export]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -608,6 +831,8 @@ els.transferExportPeriod.addEventListener("change", () => {
 });
 els.transferExportBtn.addEventListener("click", exportTransfers);
 els.saveTelegramBotFather.addEventListener("click", saveTelegramSetup);
+els.saveSmtpSetup.addEventListener("click", saveSmtpSetup);
+els.sendTestEmailBtn.addEventListener("click", sendTestEmail);
 document.querySelectorAll("[data-tab]").forEach((link) => {
   link.addEventListener("click", (event) => {
     event.preventDefault();
@@ -635,6 +860,9 @@ async function checkAuth() {
       const nameEl = document.querySelector(".username");
       if (nameEl) nameEl.textContent = state.user.full_name || state.user.email;
 
+      const emailEl = document.querySelector(".dropdown-email");
+      if (emailEl) emailEl.textContent = state.user.email;
+
       const roleEl = document.querySelector(".role");
       if (roleEl) {
         const displayRole = state.user.roles.map(r => r.replace("_", " ")).join(", ");
@@ -650,6 +878,22 @@ async function checkAuth() {
     console.error("Unauthorized. Redirecting to login...", error);
     window.location.href = "/static/login.html";
   }
+}
+
+// User profile dropdown: bam ten/avatar de mo, bam ngoai de dong.
+const userTriggerBtn = document.querySelector("#userTriggerBtn");
+const userProfileToggle = document.querySelector("#userProfileToggle");
+const userDropdown = document.querySelector("#userDropdown");
+if (userTriggerBtn && userDropdown) {
+  userTriggerBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    userDropdown.hidden = !userDropdown.hidden;
+  });
+  document.addEventListener("click", (event) => {
+    if (!userDropdown.hidden && !userProfileToggle.contains(event.target)) {
+      userDropdown.hidden = true;
+    }
+  });
 }
 
 // Log out button listener
@@ -1193,6 +1437,16 @@ const translations = {
     th_review: "Duyệt",
     th_actions: "Thao tác",
     nav_admin: "Quản trị",
+    panel_projects_list: "Danh sách dự án",
+    th_code: "Mã",
+    th_name: "Tên dự án",
+    th_owner: "Chủ nhiệm",
+    th_department: "Phòng ban",
+    th_budget: "Ngân sách",
+    th_status: "Trạng thái",
+    lbl_export_lang: "Xuất bằng ngôn ngữ",
+    opt_lang_vi: "Tiếng Việt",
+    opt_lang_en: "English",
   },
   en: {
     nav_overview: "Overview",
@@ -1246,6 +1500,16 @@ const translations = {
     th_review: "Review",
     th_actions: "Actions",
     nav_admin: "Admin",
+    panel_projects_list: "Project list",
+    th_code: "Code",
+    th_name: "Project name",
+    th_owner: "Owner",
+    th_department: "Department",
+    th_budget: "Budget",
+    th_status: "Status",
+    lbl_export_lang: "Export language",
+    opt_lang_vi: "Tiếng Việt",
+    opt_lang_en: "English",
   }
 };
 

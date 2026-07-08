@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "invmmc.db"
 OFFSET_DIR = PROJECT_ROOT / "data" / "telegram_offsets"
 LEGACY_OFFSET_FILE = PROJECT_ROOT / "data" / "telegram_polling_offset.txt"
-LOCAL_WEBHOOK_URL = "http://127.0.0.1:8000/telegram/webhook"
+DEFAULT_INTERNAL_BASE_URL = "http://127.0.0.1:8000"
 POLL_TIMEOUT_SECONDS = 50
 REFRESH_INTERVAL_SECONDS = 60
 
@@ -90,9 +90,11 @@ def save_offset(bot_row_id: str, offset: int) -> None:
     offset_file(bot_row_id).write_text(str(offset), encoding="utf-8")
 
 
-async def forward_update(client: httpx.AsyncClient, bot: BotRow, update: dict, secret: str) -> None:
+async def forward_update(
+    client: httpx.AsyncClient, bot: BotRow, update: dict, secret: str, webhook_url: str
+) -> None:
     response = await client.post(
-        LOCAL_WEBHOOK_URL,
+        webhook_url,
         json=update,
         headers={
             "X-Telegram-Bot-Api-Secret-Token": secret,
@@ -104,7 +106,7 @@ async def forward_update(client: httpx.AsyncClient, bot: BotRow, update: dict, s
     print(f"[{bot.username or bot.row_id}] forwarded update_id={update.get('update_id')}")
 
 
-async def poll_bot(bot: BotRow, secret: str, legacy_token: str) -> None:
+async def poll_bot(bot: BotRow, secret: str, legacy_token: str, webhook_url: str) -> None:
     api_base = f"https://api.telegram.org/bot{bot.token}"
     offset = load_offset(bot, legacy_token)
     print(f"[{bot.username or bot.row_id}] polling started, offset={offset}")
@@ -136,9 +138,9 @@ async def poll_bot(bot: BotRow, secret: str, legacy_token: str) -> None:
             for update in payload.get("result", []):
                 update_id = int(update.get("update_id", 0))
                 try:
-                    await forward_update(client, bot, update, secret)
+                    await forward_update(client, bot, update, secret, webhook_url)
                 except httpx.ConnectError:
-                    print("backend local chua chay tai 127.0.0.1:8000; retry in 5s")
+                    print(f"backend chua chay tai {webhook_url}; retry in 5s")
                     await asyncio.sleep(5)
                     break
                 except httpx.HTTPError as error:
@@ -153,6 +155,12 @@ async def main() -> None:
     legacy_token = env.get("TELEGRAM_BOT_TOKEN", "")
     if not secret:
         raise SystemExit("TELEGRAM_WEBHOOK_SECRET chua co trong .env")
+
+    # Bridge luon phai chay CUNG MAY voi backend (goi loopback, khong mo cong ra ngoai).
+    # Doc tu .env de deploy sang server khac khong bi dinh cung "127.0.0.1" cua may cu.
+    internal_base = (env.get("INTERNAL_WEBHOOK_BASE_URL") or DEFAULT_INTERNAL_BASE_URL).rstrip("/")
+    webhook_url = f"{internal_base}/telegram/webhook"
+    print(f"forward target: {webhook_url}")
 
     tasks: dict[str, asyncio.Task] = {}
     known_tokens: dict[str, str] = {}
@@ -171,7 +179,7 @@ async def main() -> None:
         # Mo task cho bot moi.
         for row_id, bot in bots.items():
             if row_id not in tasks:
-                tasks[row_id] = asyncio.create_task(poll_bot(bot, secret, legacy_token))
+                tasks[row_id] = asyncio.create_task(poll_bot(bot, secret, legacy_token, webhook_url))
                 known_tokens[row_id] = bot.token
 
         if not tasks:

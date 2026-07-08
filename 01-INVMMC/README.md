@@ -22,6 +22,7 @@ Muc tieu cua du an:
 - [Backend contract cho Antigravity](./docs/07-antigravity-backend-contract.md)
 - [AI local phan tich anh chuyen khoan thu/chi](./docs/08-ai-phan-tich-thu-chi.md)
 - [Da nguoi dung: moi user mot bot Telegram](./docs/09-multi-user-bot.md)
+- [Trien khai len server rieng](./docs/10-trien-khai-production.md)
 
 ## Cau truc ung dung
 
@@ -40,7 +41,7 @@ tests/                 unit tests cho nghiep vu loi
 ## Backend hien tai
 
 - Backend: FastAPI.
-- Auth: login bang email/password, session cookie `invmmc_session`, HttpOnly.
+- Auth: login bang email/password, session cookie `invmmc_session`, HttpOnly. Co quen mat khau (`/forgot-password` -> email link -> `/reset-password`), can cau hinh `SMTP_*` trong `.env` de gui that (xem `.env.example`), khong thi link reset chi log ra console.
 - RBAC: role nam trong bang `users.roles_json`.
 - Database local: SQLite `data/invmmc.db`.
 - Demo seed: tat mac dinh bang `DEMO_SEED_DATA=false`.

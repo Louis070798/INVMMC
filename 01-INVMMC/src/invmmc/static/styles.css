@@ -260,17 +260,25 @@ body {
 }
 
 .user-profile {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  position: relative;
   border-left: 1px solid var(--line);
   padding-left: 20px;
 }
 
-.bell-icon {
-  font-size: 18px;
-  color: var(--text-muted);
+.user-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  padding: 4px;
+  border-radius: var(--radius-inner);
   cursor: pointer;
+  font-family: inherit;
+}
+
+.user-trigger:hover {
+  background: var(--surface-2);
 }
 
 .avatar {
@@ -284,22 +292,80 @@ body {
   justify-content: center;
   font-weight: 700;
   font-size: 14px;
-}
-
-.user-info {
-  display: flex;
-  flex-direction: column;
+  flex-shrink: 0;
 }
 
 .username {
   font-weight: 600;
   font-size: 13px;
   color: var(--text);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown-caret {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inner);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 200;
+}
+
+.user-dropdown-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dropdown-email {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+  word-break: break-all;
 }
 
 .role {
   font-size: 11px;
   color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.dropdown-logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inner);
+  color: var(--red);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.dropdown-logout:hover {
+  background: var(--red-soft);
 }
 
 /* MAIN CONTAINER GRID COLS */
@@ -761,6 +827,11 @@ body[data-tab="dashboard"] .kpi-grid {
   grid-column: span 12;
 }
 
+#projectList,
+#admin {
+  grid-column: span 12;
+}
+
 /* Active tab panel width expansions */
 body[data-tab="projects"] .chart-panel,
 body[data-tab="approvals"] #approvals,
@@ -1088,6 +1159,69 @@ td.amount {
 
 .btn-primary:hover {
   background: var(--primary-hover);
+}
+
+.checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.checkbox-line input {
+  width: 16px;
+  height: 16px;
+}
+
+.smtp-test-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.smtp-test-row input {
+  flex: 1;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inner);
+  padding: 0 10px;
+  background: var(--surface);
+  outline: none;
+}
+
+.smtp-test-row button {
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inner);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.smtp-test-row button:hover {
+  background: var(--surface-2);
+}
+
+.smtp-test-result {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+  min-height: 16px;
+}
+
+.smtp-test-result.success {
+  color: #16a34a;
+}
+
+.smtp-test-result.error {
+  color: #ef4444;
 }
 
 /* OTHER INTEGRATIONS ROW */

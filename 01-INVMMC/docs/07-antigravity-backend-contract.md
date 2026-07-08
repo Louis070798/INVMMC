@@ -158,6 +158,27 @@ GET /api/v1/projects
 
 Requires finance read role.
 
+### Report export (project summary & transaction detail)
+
+```http
+GET /api/v1/reports/export?period=month&fmt=xlsx&lang=vi
+GET /api/v1/transfers/export?period=month&fmt=xlsx&lang=vi
+```
+
+`lang=vi` (default) or `lang=en` - translates titles, sheet name, column
+headers, review-status labels, and THU/CHI -> INCOME/EXPENSE inside the
+generated .xlsx. `fmt=csv` still returns raw field-name headers (unaffected
+by `lang`, since those are machine-oriented keys, not display text).
+
+Khi truyen them `project_id` (loc theo 1 du an cu the), file name va tieu de
+trong file doi sang dang theo du an thay vi theo ky han chung:
+
+- File name: `invmmc-bao-cao-du-an-{MA_DU_AN}-{start}-to-{end}.xlsx` (ma du
+  an duoc loc ky tu khong an toan cho ten file).
+- Tieu de trong file (dong A2): `Du an: {Ten du an day du} ({Ma du an})  |
+  Tu {start} - {end}` - dung TEN DAY DU cua du an (giu dau tieng Viet, khong
+  bi rang buoc nhu ten file).
+
 ```http
 POST /api/v1/projects
 Content-Type: application/json
@@ -171,7 +192,29 @@ Content-Type: application/json
 }
 ```
 
-Requires finance write role.
+Requires finance write role. Project moi tao co `status = "pending_approval"`;
+duyet bang PATCH ben duoi. 409 `project_code_exists` neu trung ma.
+
+```http
+PATCH /api/v1/projects/{project_id}
+Content-Type: application/json
+
+{
+  "code": "PRJ001",          // optional, 409 neu trung ma khac
+  "name": "...",             // optional
+  "owner": "...",            // optional
+  "department": "...",       // optional
+  "budget_amount": 200000000, // optional
+  "status": "active"         // optional: pending_approval | active (duyet du an = active)
+}
+```
+
+```http
+DELETE /api/v1/projects/{project_id}
+```
+
+Requires finance write role. 409 `project_has_data:expenses=N,attachments=M`
+neu du an con de nghi chi hoac chung tu tham chieu - phai go/chuyen truoc khi xoa.
 
 ### Expenses
 
